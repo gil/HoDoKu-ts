@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { Board } from "../../src/core/board.js";
 import { getTypeFromLibraryType, isSingle } from "../../src/core/solution-type.js";
-import { SimpleSolver } from "../../src/solver/simple.js";
+import { StepFinder } from "../../src/solver/step-finder.js";
 import { loadReglib, parseCandList } from "../fixtures/reglib.js";
 
-// Library codes whose techniques SimpleSolver implements.
+// Library codes whose techniques are implemented so far.
 const IMPLEMENTED = new Set([
   "0000", // Full House
   "0002", // Hidden Single
@@ -17,6 +17,9 @@ const IMPLEMENTED = new Set([
   "0212", // Hidden Quadruple
   "0100", // Locked Candidates Type 1
   "0101", // Locked Candidates Type 2
+  "0800", // XY-Wing
+  "0801", // XYZ-Wing
+  "0803", // W-Wing
 ]);
 
 const entries = loadReglib().filter((e) => !e.isFail && IMPLEMENTED.has(e.base));
@@ -31,14 +34,13 @@ describe("golden: simple techniques vs reglib-1.3", () => {
 
   // A board may contain several instances of a technique; reglib records one
   // specific instance. Parity check: that instance must be among findAll(type).
-  const simple = new SimpleSolver();
   let idx = 0;
   for (const e of entries) {
     const type = getTypeFromLibraryType(e.base);
     it(`#${idx++} ${e.base} ${e.candidates}: ${type}`, () => {
       expect(type).not.toBeNull();
       const board = Board.fromString(e.raw);
-      const all = simple.findAll(board, type!);
+      const all = new StepFinder(board).findAll(type!);
       expect(all.length, `no ${type} found`).toBeGreaterThan(0);
 
       if (isSingle(type!)) {

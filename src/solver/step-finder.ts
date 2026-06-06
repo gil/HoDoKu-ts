@@ -5,6 +5,8 @@
  */
 
 import type { Board } from "../core/board.js";
+import { candidatesOf } from "../core/candidates.js";
+import { CellSet } from "../core/cell-set.js";
 import { SolutionStep } from "../core/solution-step.js";
 import type { SolutionType } from "../core/solution-type.js";
 import { LENGTH } from "../core/tables.js";
@@ -12,6 +14,7 @@ import { applyStep } from "./apply-step.js";
 import { validSolution } from "./brute-force.js";
 import { getGiveUpStep } from "./give-up.js";
 import { SimpleSolver } from "./simple.js";
+import { WingSolver } from "./wing.js";
 
 const SIMPLE_TYPES = new Set<SolutionType>([
   "FULL_HOUSE",
@@ -30,24 +33,52 @@ const SIMPLE_TYPES = new Set<SolutionType>([
   "LOCKED_CANDIDATES_2",
 ]);
 
+const WING_TYPES = new Set<SolutionType>(["XY_WING", "XYZ_WING", "W_WING"]);
+
 export class StepFinder {
   private readonly simple = new SimpleSolver();
+  private readonly wing = new WingSolver();
+
+  private candidates: CellSet[] = Array.from({ length: 10 }, () => new CellSet());
+  private candDirty = true;
 
   constructor(public board: Board) {}
 
   setBoard(board: Board): void {
     this.board = board;
+    this.candDirty = true;
+  }
+
+  /** Per-digit position sets: candidates[d] = cells where digit d is still a candidate. */
+  getCandidates(): CellSet[] {
+    if (this.candDirty) {
+      for (let d = 1; d <= 9; d++) this.candidates[d]!.clear();
+      for (let i = 0; i < LENGTH; i++) {
+        for (const d of candidatesOf(this.board.cells[i]!)) this.candidates[d]!.add(i);
+      }
+      this.candDirty = false;
+    }
+    return this.candidates;
   }
 
   getStep(type: SolutionType): SolutionStep | null {
     if (SIMPLE_TYPES.has(type)) return this.simple.getStep(this.board, type);
+    if (WING_TYPES.has(type)) return this.wing.getStep(this, type);
     if (type === "BRUTE_FORCE") return this.getBruteForce();
     if (type === "GIVE_UP") return getGiveUpStep();
     return null;
   }
 
+  /** All instances of `type` in the current grid (for the all-steps / summarize API). */
+  findAll(type: SolutionType): SolutionStep[] {
+    if (SIMPLE_TYPES.has(type)) return this.simple.findAll(this.board, type);
+    if (WING_TYPES.has(type)) return this.wing.findAll(this, type);
+    return [];
+  }
+
   doStep(step: SolutionStep): void {
     applyStep(this.board, step);
+    this.candDirty = true;
   }
 
   private getBruteForce(): SolutionStep | null {
