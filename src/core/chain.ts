@@ -112,6 +112,11 @@ export function getSNodeType(entry: number): number {
   return (abs(entry) & MODE_MASK) >> MODE_OFFSET;
 }
 
+/** Returns the entry with its strong-link flag set/cleared (entries are positive here). */
+export function setSStrong(entry: number, strong: boolean): number {
+  return strong ? entry | STRONG_MASK : entry & ~STRONG_MASK;
+}
+
 export class Chain {
   constructor(
     public start: number,

@@ -25,6 +25,9 @@ const IMPLEMENTED = new Set([
   "0300", // X-Wing
   "0301", // Swordfish
   "0302", // Jellyfish
+  "0403", // Turbot Fish
+  "0701", // X-Chain
+  "0702", // XY-Chain
   "0500", // Simple Colors Trap
   "0501", // Simple Colors Wrap
   "0502", // Multi Colors 1

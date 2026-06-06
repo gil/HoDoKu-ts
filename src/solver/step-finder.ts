@@ -12,6 +12,7 @@ import type { SolutionType } from "../core/solution-type.js";
 import { BUDDIES, LENGTH } from "../core/tables.js";
 import { applyStep } from "./apply-step.js";
 import { validSolution } from "./brute-force.js";
+import { ChainsSolver } from "./chains.js";
 import { ColoringSolver } from "./coloring.js";
 import { FishSolver } from "./fish.js";
 import { getGiveUpStep } from "./give-up.js";
@@ -52,6 +53,8 @@ const COLORING_TYPES = new Set<SolutionType>([
   "MULTI_COLORS_2",
 ]);
 
+const CHAIN_TYPES = new Set<SolutionType>(["X_CHAIN", "XY_CHAIN", "TURBOT_FISH"]);
+
 const UNIQUENESS_TYPES = new Set<SolutionType>([
   "UNIQUENESS_1",
   "UNIQUENESS_2",
@@ -72,6 +75,7 @@ export class StepFinder {
   private readonly fish = new FishSolver();
   private readonly coloring = new ColoringSolver();
   private readonly uniqueness = new UniquenessSolver();
+  private readonly chains = new ChainsSolver();
 
   private candidates: CellSet[] = Array.from({ length: 10 }, () => new CellSet());
   private candDirty = true;
@@ -124,6 +128,7 @@ export class StepFinder {
     if (BASIC_FISH_TYPES.has(type)) return this.fish.getStep(this, type);
     if (COLORING_TYPES.has(type)) return this.coloring.getStep(this, type);
     if (UNIQUENESS_TYPES.has(type)) return this.uniqueness.getStep(this, type);
+    if (CHAIN_TYPES.has(type)) return this.chains.getStep(this, type);
     if (type === "BRUTE_FORCE") return this.getBruteForce();
     if (type === "GIVE_UP") return getGiveUpStep();
     return null;
@@ -137,6 +142,7 @@ export class StepFinder {
     if (BASIC_FISH_TYPES.has(type)) return this.fish.findAll(this, type);
     if (COLORING_TYPES.has(type)) return this.coloring.findAll(this, type);
     if (UNIQUENESS_TYPES.has(type)) return this.uniqueness.findAll(this, type);
+    if (CHAIN_TYPES.has(type)) return this.chains.findAll(this, type);
     return [];
   }
 
