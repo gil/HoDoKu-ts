@@ -34,6 +34,7 @@ const IMPLEMENTED = new Set([
   "0603", // Unique Rectangle Type 4
   "0604", // Unique Rectangle Type 5
   "0605", // Unique Rectangle Type 6
+  "0606", // Hidden Rectangle
   "0610", // BUG+1
   // "0402" Empty Rectangle: registered + correct on the cases it finds, but the
   // ported single-ER algorithm misses ~6/36 reglib instances (a deeper ER

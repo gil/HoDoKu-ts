@@ -58,6 +58,7 @@ const UNIQUENESS_TYPES = new Set<SolutionType>([
   "UNIQUENESS_4",
   "UNIQUENESS_5",
   "UNIQUENESS_6",
+  "HIDDEN_RECTANGLE",
   "BUG_PLUS_1",
 ]);
 

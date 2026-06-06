@@ -33,6 +33,7 @@ const UR_TYPES = new Set<SolutionType>([
   "UNIQUENESS_4",
   "UNIQUENESS_5",
   "UNIQUENESS_6",
+  "HIDDEN_RECTANGLE",
 ]);
 
 function popcount(mask: number): number {
@@ -237,6 +238,75 @@ export class UniquenessSolver {
           if (step.candidatesToDelete.length > 0) out.push(step);
         }
       }
+    }
+
+    // Hidden Rectangle: one (or two diagonal) bivalue corner(s); if a UR candidate
+    // is confined to the corner's two conjugate links in both the line and col of
+    // the opposite corner, the other UR candidate is removable at that corner.
+    if (twoCount === 2 || twoCount === 1) {
+      let doCheck = true;
+      if (twoCount === 2) {
+        const a = twoCells[0]!;
+        const b = twoCells[1]!;
+        if (getLine(a) === getLine(b) || getCol(a) === getCol(b)) doCheck = false;
+      }
+      if (doCheck) {
+        const cornersSet = CellSet.fromIndices(corners);
+        this.checkHiddenRectangle(finder, twoCells[0]!, additional, cand1, cand2, cornersSet, out);
+        if (twoCount === 2) {
+          this.checkHiddenRectangle(finder, twoCells[1]!, additional, cand1, cand2, cornersSet, out);
+        }
+      }
+    }
+  }
+
+  private checkHiddenRectangle(
+    finder: CandidateFinder,
+    corner: number,
+    additional: number[],
+    cand1: number,
+    cand2: number,
+    cornersSet: CellSet,
+    out: SolutionStep[],
+  ): void {
+    const lineC = getLine(corner);
+    const colC = getCol(corner);
+    const i1 = additional[0]!;
+    const i2 = additional[1]!;
+    let line1 = getLine(i1);
+    if (line1 === lineC) line1 = getLine(i2);
+    let col1 = getCol(i1);
+    if (col1 === colC) col1 = getCol(i2);
+    this.checkCandHR(finder, line1, col1, cand1, cand2, cornersSet, out);
+    this.checkCandHR(finder, line1, col1, cand2, cand1, cornersSet, out);
+  }
+
+  private checkCandHR(
+    finder: CandidateFinder,
+    line: number,
+    col: number,
+    cand1: number,
+    cand2: number,
+    cornersSet: CellSet,
+    out: SolutionStep[],
+  ): void {
+    const cands = finder.getCandidates();
+    const t = cands[cand1]!.clone();
+    t.and(LINE_TPL[line]!);
+    t.andNot(cornersSet);
+    if (!t.isEmpty()) return;
+    t.set(cands[cand1]!);
+    t.and(COL_TPL[col]!);
+    t.andNot(cornersSet);
+    if (!t.isEmpty()) return;
+    const delIndex = line * 9 + col;
+    if (finder.board.isCandidate(delIndex, cand2)) {
+      const step = new SolutionStep("HIDDEN_RECTANGLE");
+      step.addValue(cand1);
+      step.addValue(cand2);
+      for (const c of cornersSet) step.addIndex(c);
+      step.addCandidateToDelete(delIndex, cand2);
+      out.push(step);
     }
   }
 
