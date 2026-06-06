@@ -58,4 +58,11 @@ describe("generator", () => {
     expect(p!.level.name.toLowerCase()).toBe("easy");
     expect(countSolutions(Board.fromValues(p!.givens), 2)).toBe(1);
   });
+
+  it("generates a hard puzzle rated hard with a unique solution", () => {
+    const p = generateByDifficulty("hard", { rng: rngFrom(9), maxTries: 8000 });
+    expect(p).not.toBeNull();
+    expect(p!.difficulty).toBe("hard");
+    expect(countSolutions(Board.fromValues(p!.givens), 2)).toBe(1);
+  });
 });

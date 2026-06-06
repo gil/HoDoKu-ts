@@ -12,11 +12,14 @@ Provides:
 
 Zero runtime dependencies. Ships ESM + CJS + type declarations.
 
-> Port status: the core engine, generator and many techniques are complete and
-> validated against HoDoKu's regression library (`reglib`). Advanced techniques
-> (chains, ALS, tabling, templates, finned/franken/mutant fish) and some
-> uniqueness variants are in progress; until they land, puzzles requiring them
-> rate as harder than HoDoKu would. Easy/Medium generation and rating are exact.
+> Port status: the engine, generator and the full Easy/Medium/Hard technique set
+> are complete and validated against HoDoKu's regression library (`reglib`) —
+> singles, subsets, intersections, wings, basic fish, coloring, the complete
+> uniqueness family (UR 1-6, Hidden/Avoidable Rectangle, BUG+1), and chains
+> (X/XY-Chain, Turbot, Remote Pair). Easy/Medium/Hard generation and rating are
+> exact. Still in progress: Nice Loops/AIC + Forcing Chains/Nets (tabling), ALS,
+> Templates, finned/franken/mutant/kraken fish, and Empty Rectangle completion;
+> until those land, UNFAIR/EXTREME puzzles needing them rate harder than HoDoKu.
 
 ## Install
 
