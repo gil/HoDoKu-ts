@@ -1,0 +1,61 @@
+import { describe, expect, it } from "vitest";
+import { Board } from "../../src/core/board.js";
+import { getTypeFromLibraryType, isSingle } from "../../src/core/solution-type.js";
+import { SimpleSolver } from "../../src/solver/simple.js";
+import { loadReglib, parseCandList } from "../fixtures/reglib.js";
+
+// Library codes whose techniques SimpleSolver implements.
+const IMPLEMENTED = new Set([
+  "0000", // Full House
+  "0002", // Hidden Single
+  "0003", // Naked Single
+  "0200", // Naked Pair
+  "0201", // Naked Triple
+  "0202", // Naked Quadruple
+  "0210", // Hidden Pair
+  "0211", // Hidden Triple
+  "0212", // Hidden Quadruple
+  "0100", // Locked Candidates Type 1
+  "0101", // Locked Candidates Type 2
+]);
+
+const entries = loadReglib().filter((e) => !e.isFail && IMPLEMENTED.has(e.base));
+
+const key = (c: { index: number; value: number }) => `${c.value}@${c.index}`;
+
+describe("golden: simple techniques vs reglib-1.3", () => {
+  it("covers every implemented code", () => {
+    const codes = new Set(entries.map((e) => e.base));
+    expect(codes.size).toBeGreaterThanOrEqual(9);
+  });
+
+  // A board may contain several instances of a technique; reglib records one
+  // specific instance. Parity check: that instance must be among findAll(type).
+  const simple = new SimpleSolver();
+  let idx = 0;
+  for (const e of entries) {
+    const type = getTypeFromLibraryType(e.base);
+    it(`#${idx++} ${e.base} ${e.candidates}: ${type}`, () => {
+      expect(type).not.toBeNull();
+      const board = Board.fromString(e.raw);
+      const all = simple.findAll(board, type!);
+      expect(all.length, `no ${type} found`).toBeGreaterThan(0);
+
+      if (isSingle(type!)) {
+        const want = parseCandList(e.placements);
+        expect(want.length).toBe(1);
+        const match = all.some(
+          (s) => s.indices[0] === want[0]!.index && s.values[0] === want[0]!.value,
+        );
+        expect(match, `placement ${e.placements} not among found`).toBe(true);
+      } else {
+        const want = parseCandList(e.eliminations).map(key);
+        const match = all.some((s) => {
+          const got = new Set(s.candidatesToDelete.map(key));
+          return got.size === want.length && want.every((w) => got.has(w));
+        });
+        expect(match, `elimination set ${e.eliminations} not among found`).toBe(true);
+      }
+    });
+  }
+});
