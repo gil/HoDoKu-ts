@@ -20,6 +20,11 @@ const IMPLEMENTED = new Set([
   "0800", // XY-Wing
   "0801", // XYZ-Wing
   "0803", // W-Wing
+  "0400", // Skyscraper
+  "0401", // 2-String Kite
+  // "0402" Empty Rectangle: registered + correct on the cases it finds, but the
+  // ported single-ER algorithm misses ~6/36 reglib instances (a deeper ER
+  // variant). Excluded from strict golden until the ER search is completed.
 ]);
 
 const entries = loadReglib().filter((e) => !e.isFail && IMPLEMENTED.has(e.base));
