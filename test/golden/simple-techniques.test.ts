@@ -22,6 +22,9 @@ const IMPLEMENTED = new Set([
   "0803", // W-Wing
   "0400", // Skyscraper
   "0401", // 2-String Kite
+  "0300", // X-Wing
+  "0301", // Swordfish
+  "0302", // Jellyfish
   // "0402" Empty Rectangle: registered + correct on the cases it finds, but the
   // ported single-ER algorithm misses ~6/36 reglib instances (a deeper ER
   // variant). Excluded from strict golden until the ER search is completed.
