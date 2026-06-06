@@ -55,7 +55,9 @@ const COLORING_TYPES = new Set<SolutionType>([
 const UNIQUENESS_TYPES = new Set<SolutionType>([
   "UNIQUENESS_1",
   "UNIQUENESS_2",
+  "UNIQUENESS_4",
   "UNIQUENESS_5",
+  "UNIQUENESS_6",
   "BUG_PLUS_1",
 ]);
 

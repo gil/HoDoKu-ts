@@ -17,13 +17,23 @@ import {
   BUDDIES,
   CONSTRAINTS,
   LENGTH,
+  UNIT_TEMPLATES,
   getBlock,
   getCol,
   getLine,
 } from "../core/tables.js";
 import type { CandidateFinder } from "./wing.js";
 
-const UR_TYPES = new Set<SolutionType>(["UNIQUENESS_1", "UNIQUENESS_2", "UNIQUENESS_5"]);
+const LINE_TPL = UNIT_TEMPLATES.slice(0, 9);
+const COL_TPL = UNIT_TEMPLATES.slice(9, 18);
+
+const UR_TYPES = new Set<SolutionType>([
+  "UNIQUENESS_1",
+  "UNIQUENESS_2",
+  "UNIQUENESS_4",
+  "UNIQUENESS_5",
+  "UNIQUENESS_6",
+]);
 
 function popcount(mask: number): number {
   let c = 0;
@@ -121,13 +131,17 @@ export class UniquenessSolver {
     out: SolutionStep[],
   ): void {
     const sudoku = finder.board;
+    const cands = finder.getCandidates();
     const urMask = MASKS[cand1]! | MASKS[cand2]!;
     const extraMask = ~urMask & 0x1ff;
     const additional: number[] = [];
+    const twoCells: number[] = [];
     let twoCount = 0;
     for (const idx of corners) {
-      if ((sudoku.cells[idx]! & extraMask) === 0) twoCount++;
-      else additional.push(idx);
+      if ((sudoku.cells[idx]! & extraMask) === 0) {
+        twoCount++;
+        twoCells.push(idx);
+      } else additional.push(idx);
     }
 
     // Type 1: exactly one corner has extra candidates -> remove the UR candidates from it.
@@ -173,6 +187,70 @@ export class UniquenessSolver {
         }
       }
     }
+
+    if (twoCount === 2) {
+      const i1 = additional[0]!;
+      const i2 = additional[1]!;
+      // Type 4: extra corners aligned; in cells seeing both, one UR candidate is
+      // absent -> the other UR candidate is removable from the extra corners.
+      if (getLine(i1) === getLine(i2) || getCol(i1) === getCol(i2)) {
+        const shared = BUDDIES[i1]!.clone();
+        shared.and(BUDDIES[i2]!);
+        let delCand = -1;
+        const t = shared.clone();
+        t.and(cands[cand1]!);
+        if (t.isEmpty()) delCand = cand2;
+        else {
+          t.set(shared);
+          t.and(cands[cand2]!);
+          if (t.isEmpty()) delCand = cand1;
+        }
+        if (delCand !== -1) {
+          const step = this.makeURStep("UNIQUENESS_4", corners, cand1, cand2);
+          if (sudoku.isCandidate(i1, delCand)) step.addCandidateToDelete(i1, delCand);
+          if (sudoku.isCandidate(i2, delCand)) step.addCandidateToDelete(i2, delCand);
+          if (step.candidatesToDelete.length > 0) out.push(step);
+        }
+      }
+      // Type 6: extra corners diagonal; if a UR candidate is absent from both lines
+      // and cols (outside the UR) it is removable from the diagonal corners.
+      if (getLine(i1) !== getLine(i2) && getCol(i1) !== getCol(i2)) {
+        const set = LINE_TPL[getLine(i1)]!.clone();
+        set.or(COL_TPL[getCol(i1)]!);
+        set.or(LINE_TPL[getLine(i2)]!);
+        set.or(COL_TPL[getCol(i2)]!);
+        for (const idx of additional) set.remove(idx);
+        for (const idx of twoCells) set.remove(idx);
+        let delCand = -1;
+        const t = set.clone();
+        t.and(cands[cand1]!);
+        if (t.isEmpty()) delCand = cand1;
+        else {
+          t.set(set);
+          t.and(cands[cand2]!);
+          if (t.isEmpty()) delCand = cand2;
+        }
+        if (delCand !== -1) {
+          const step = this.makeURStep("UNIQUENESS_6", corners, cand1, cand2);
+          if (sudoku.isCandidate(i1, delCand)) step.addCandidateToDelete(i1, delCand);
+          if (sudoku.isCandidate(i2, delCand)) step.addCandidateToDelete(i2, delCand);
+          if (step.candidatesToDelete.length > 0) out.push(step);
+        }
+      }
+    }
+  }
+
+  private makeURStep(
+    type: SolutionType,
+    corners: number[],
+    cand1: number,
+    cand2: number,
+  ): SolutionStep {
+    const step = new SolutionStep(type);
+    step.addValue(cand1);
+    step.addValue(cand2);
+    for (const c of corners) step.addIndex(c);
+    return step;
   }
 
   private getBugPlus1(finder: CandidateFinder): SolutionStep | null {
