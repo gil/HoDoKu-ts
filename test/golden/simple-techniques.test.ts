@@ -31,6 +31,7 @@ const IMPLEMENTED = new Set([
   "0503", // Multi Colors 2
   "0600", // Unique Rectangle Type 1
   "0601", // Unique Rectangle Type 2
+  "0602", // Unique Rectangle Type 3
   "0603", // Unique Rectangle Type 4
   "0604", // Unique Rectangle Type 5
   "0605", // Unique Rectangle Type 6

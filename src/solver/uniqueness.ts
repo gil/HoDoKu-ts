@@ -7,16 +7,21 @@
  * proper puzzles); HoDoKu guards on a strict-validity flag we don't track here.
  */
 
-import { MASKS } from "../core/candidates.js";
+import { ANZ_VALUES, MASKS, POSSIBLE_VALUES } from "../core/candidates.js";
 import { CellSet } from "../core/cell-set.js";
 import { SolutionStep } from "../core/solution-step.js";
 import type { SolutionType } from "../core/solution-type.js";
 import {
   ALL_UNITS,
+  BLOCK,
   BLOCKS,
   BUDDIES,
+  COL,
+  COLS,
   CONSTRAINTS,
   LENGTH,
+  LINE,
+  LINES,
   UNIT_TEMPLATES,
   getBlock,
   getCol,
@@ -30,6 +35,7 @@ const COL_TPL = UNIT_TEMPLATES.slice(9, 18);
 const UR_TYPES = new Set<SolutionType>([
   "UNIQUENESS_1",
   "UNIQUENESS_2",
+  "UNIQUENESS_3",
   "UNIQUENESS_4",
   "UNIQUENESS_5",
   "UNIQUENESS_6",
@@ -51,6 +57,26 @@ function lowestDigit(mask: number): number {
   let d = 1;
   while ((mask & (1 << (d - 1))) === 0) d++;
   return d;
+}
+
+function isSameLineOrCol(indices: number[]): boolean {
+  if (indices.length === 0) return false;
+  let sameLine = true;
+  let sameCol = true;
+  const line = getLine(indices[0]!);
+  const col = getCol(indices[0]!);
+  for (let i = 1; i < indices.length; i++) {
+    if (getLine(indices[i]!) !== line) sameLine = false;
+    if (getCol(indices[i]!) !== col) sameCol = false;
+  }
+  return sameLine || sameCol;
+}
+
+function blockForCheck3(indices: number[]): number {
+  if (indices.length === 0) return -1;
+  const block = getBlock(indices[0]!);
+  for (let i = 1; i < indices.length; i++) if (getBlock(indices[i]!) !== block) return -1;
+  return block;
 }
 
 export class UniquenessSolver {
@@ -290,6 +316,23 @@ export class UniquenessSolver {
     if (twoCount === 2) {
       const i1 = additional[0]!;
       const i2 = additional[1]!;
+      // Type 3: the two extra corners + (k-1) further cells in a shared house form
+      // a naked subset of k candidates -> those candidates leave the other cells.
+      const u3Cands = (sudoku.cells[i1]! & extraMask) | (sudoku.cells[i2]! & extraMask);
+      if (getLine(i1) === getLine(i2)) {
+        this.checkUniqueness3(finder, LINE, LINES[getLine(i1)]!, u3Cands, urMask, corners, cand1, cand2, additional, out);
+      }
+      if (getCol(i1) === getCol(i2)) {
+        this.checkUniqueness3(finder, COL, COLS[getCol(i1)]!, u3Cands, urMask, corners, cand1, cand2, additional, out);
+      }
+      if (getBlock(i1) === getBlock(i2)) {
+        this.checkUniqueness3(finder, BLOCK, BLOCKS[getBlock(i1)]!, u3Cands, urMask, corners, cand1, cand2, additional, out);
+      }
+    }
+
+    if (twoCount === 2) {
+      const i1 = additional[0]!;
+      const i2 = additional[1]!;
       // Type 4: extra corners aligned; in cells seeing both, one UR candidate is
       // absent -> the other UR candidate is removable from the extra corners.
       if (getLine(i1) === getLine(i2) || getCol(i1) === getCol(i2)) {
@@ -405,6 +448,82 @@ export class UniquenessSolver {
       for (const c of cornersSet) step.addIndex(c);
       step.addCandidateToDelete(delIndex, cand2);
       out.push(step);
+    }
+  }
+
+  private checkUniqueness3(
+    finder: CandidateFinder,
+    unitType: number,
+    unit: readonly number[],
+    u3Cands: number,
+    urMask: number,
+    corners: number[],
+    cand1: number,
+    cand2: number,
+    additional: number[],
+    out: SolutionStep[],
+  ): void {
+    const sudoku = finder.board;
+    const cornerSet = new Set(corners);
+    const u3Indices: number[] = [];
+    for (const idx of unit) {
+      if (sudoku.cells[idx]! !== 0 && (sudoku.cells[idx]! & urMask) === 0 && !cornerSet.has(idx)) {
+        u3Indices.push(idx);
+      }
+    }
+    if (u3Indices.length === 0) return;
+    this.u3Recursive(finder, unitType, unit, u3Indices, u3Cands, [...additional], 0, corners, cand1, cand2, out);
+  }
+
+  private u3Recursive(
+    finder: CandidateFinder,
+    unitType: number,
+    unit: readonly number[],
+    u3Indices: number[],
+    candsIncluded: number,
+    indicesIncluded: number[],
+    startIndex: number,
+    corners: number[],
+    cand1: number,
+    cand2: number,
+    out: SolutionStep[],
+  ): void {
+    const sudoku = finder.board;
+    for (let i = startIndex; i < u3Indices.length; i++) {
+      const aktCands = candsIncluded | sudoku.cells[u3Indices[i]!]!;
+      const aktIndices = [...indicesIncluded, u3Indices[i]!];
+      if (unitType !== BLOCK || !isSameLineOrCol(aktIndices)) {
+        if (ANZ_VALUES[aktCands]! === aktIndices.length - 1) {
+          const step = this.makeURStep("UNIQUENESS_3", corners, cand1, cand2);
+          const aktSet = new Set(aktIndices);
+          for (const idx of unit) {
+            if (sudoku.values[idx] === 0 && !aktSet.has(idx)) {
+              for (const c of POSSIBLE_VALUES[sudoku.cells[idx]! & aktCands]!) {
+                step.addCandidateToDelete(idx, c);
+              }
+            }
+          }
+          if (step.candidatesToDelete.length > 0) {
+            for (const c of POSSIBLE_VALUES[aktCands]!) {
+              for (const idx of aktIndices) if (sudoku.isCandidate(idx, c)) step.addFin(idx, c);
+            }
+            if (unitType === LINE || unitType === COL) {
+              const block = blockForCheck3(aktIndices);
+              if (block !== -1) {
+                for (const idx of BLOCKS[block]!) {
+                  if (sudoku.values[idx] === 0 && !aktSet.has(idx)) {
+                    for (const c of POSSIBLE_VALUES[sudoku.cells[idx]! & aktCands]!) {
+                      step.addCandidateToDelete(idx, c);
+                    }
+                  }
+                }
+              }
+            }
+            out.push(step);
+          }
+        }
+      }
+      this.u3Recursive(finder, unitType, unit, u3Indices, aktCands, aktIndices, i + 1, corners, cand1, cand2, out);
     }
   }
 
