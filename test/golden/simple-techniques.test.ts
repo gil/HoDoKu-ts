@@ -28,6 +28,7 @@ const IMPLEMENTED = new Set([
   "0403", // Turbot Fish
   "0701", // X-Chain
   "0702", // XY-Chain
+  "0703", // Remote Pair
   "0500", // Simple Colors Trap
   "0501", // Simple Colors Wrap
   "0502", // Multi Colors 1

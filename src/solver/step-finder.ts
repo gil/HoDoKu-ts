@@ -53,7 +53,12 @@ const COLORING_TYPES = new Set<SolutionType>([
   "MULTI_COLORS_2",
 ]);
 
-const CHAIN_TYPES = new Set<SolutionType>(["X_CHAIN", "XY_CHAIN", "TURBOT_FISH"]);
+const CHAIN_TYPES = new Set<SolutionType>([
+  "X_CHAIN",
+  "XY_CHAIN",
+  "TURBOT_FISH",
+  "REMOTE_PAIR",
+]);
 
 const UNIQUENESS_TYPES = new Set<SolutionType>([
   "UNIQUENESS_1",

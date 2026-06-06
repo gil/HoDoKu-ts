@@ -52,8 +52,11 @@ export class ChainsSolver {
   private stackLevel = 0;
   private chainSet = new CellSet();
   private startCellSet = new CellSet();
+  private startCellSet2 = new CellSet();
   private startIndex = 0;
   private startCandidate = 0;
+  private startCandidate2 = 0;
+  private rpCell = 0;
   private steps: SolutionStep[] = [];
   private deletesMap = new Map<string, number>();
 
@@ -87,8 +90,22 @@ export class ChainsSolver {
           if (!isSStrong(link)) continue;
           if ((type === "X_CHAIN" || type === "TURBOT_FISH") && getSCandidate(link) !== startCandidate)
             continue;
-          if (type === "XY_CHAIN" && sudoku.getAnzCandidates(getSCellIndex(link)) !== 2) continue;
-          if (type === "XY_CHAIN" && getSCellIndex(link) !== this.startIndex) continue;
+          if (
+            (type === "XY_CHAIN" || type === "REMOTE_PAIR") &&
+            sudoku.getAnzCandidates(getSCellIndex(link)) !== 2
+          )
+            continue;
+          if (
+            (type === "XY_CHAIN" || type === "REMOTE_PAIR") &&
+            getSCellIndex(link) !== this.startIndex
+          )
+            continue;
+
+          if (type === "REMOTE_PAIR") {
+            this.rpCell = sudoku.cells[this.startIndex]!;
+            const cs = sudoku.getAllCandidates(this.startIndex);
+            this.startCandidate2 = cs[0] === startCandidate ? cs[1]! : cs[0]!;
+          }
 
           this.stackLevel = 1;
           this.chain[0] = makeSimpleEntry(this.startIndex, startCandidate, false);
@@ -103,6 +120,10 @@ export class ChainsSolver {
           this.chainSet.add(this.startIndex);
           this.startCellSet.set(BUDDIES[this.startIndex]!);
           this.startCellSet.and(this.candidates[startCandidate]!);
+          if (type === "REMOTE_PAIR") {
+            this.startCellSet2.set(BUDDIES[this.startIndex]!);
+            this.startCellSet2.and(this.candidates[this.startCandidate2]!);
+          }
           this.getChain(type, chainMaxLength);
         }
       }
@@ -128,10 +149,17 @@ export class ChainsSolver {
       const newLinkIndex = getSCellIndex(newLink);
       const newLinkCandidate = getSCandidate(newLink);
       if (entry.cellIndex === newLinkIndex && entry.candidate === newLinkCandidate) continue;
-      if (type === "XY_CHAIN" && sudoku.getAnzCandidates(newLinkIndex) !== 2) continue;
+      if (type === "REMOTE_PAIR" && sudoku.cells[newLinkIndex] !== this.rpCell) continue;
+      if ((type === "XY_CHAIN" || type === "REMOTE_PAIR") && sudoku.getAnzCandidates(newLinkIndex) !== 2)
+        continue;
       if ((type === "X_CHAIN" || type === "TURBOT_FISH") && newLinkCandidate !== this.startCandidate)
         continue;
-      if (type === "XY_CHAIN" && entry.strongOnly && newLinkIndex !== entry.cellIndex) continue;
+      if (
+        (type === "XY_CHAIN" || type === "REMOTE_PAIR") &&
+        entry.strongOnly &&
+        newLinkIndex !== entry.cellIndex
+      )
+        continue;
 
       let isLoop = false;
       if (this.chainSet.contains(newLinkIndex)) {
@@ -154,6 +182,9 @@ export class ChainsSolver {
           else if (type === "TURBOT_FISH") {
             if (level === 3) this.addChainStep(check, "TURBOT_FISH", level);
           } else if (type === "XY_CHAIN") this.addChainStep(check, "XY_CHAIN", level);
+          else if (type === "REMOTE_PAIR") {
+            if (level >= 7) this.checkRemotePairs(check, newLinkIndex, level);
+          }
         }
       }
 
@@ -189,13 +220,56 @@ export class ChainsSolver {
     this.steps.push(step);
   }
 
+  private checkRemotePairs(check: CellSet, endIndex: number, level: number): void {
+    const step = new SolutionStep("REMOTE_PAIR");
+    const rpCand1 = new CellSet();
+    const rpCand2 = new CellSet();
+    if (level > 7) {
+      for (let i = 0; i <= level; i += 2) {
+        for (let j = i + 6; j <= level; j += 4) {
+          const rpTmp = BUDDIES[getSCellIndex(this.chain[i]!)]!.clone();
+          rpTmp.and(BUDDIES[getSCellIndex(this.chain[j]!)]!);
+          const cb = rpTmp.clone();
+          cb.and(this.candidates[this.startCandidate]!);
+          rpCand1.or(cb);
+          const cb2 = rpTmp.clone();
+          cb2.and(this.candidates[this.startCandidate2]!);
+          rpCand2.or(cb2);
+        }
+      }
+    } else {
+      rpCand1.set(check);
+      const c2 = this.startCellSet2.clone();
+      c2.and(BUDDIES[endIndex]!);
+      rpCand2.set(c2);
+    }
+    step.addValue(this.startCandidate);
+    step.addValue(this.startCandidate2);
+    for (const idx of rpCand1) step.addCandidateToDelete(idx, this.startCandidate);
+    for (const idx of rpCand2) step.addCandidateToDelete(idx, this.startCandidate2);
+    if (step.candidatesToDelete.length === 0) return;
+    const key = step.candidatesToDelete
+      .map((c) => `${c.value}@${c.index}`)
+      .sort()
+      .join(",");
+    const old = this.deletesMap.get(key);
+    if (old !== undefined && old <= level) return;
+    this.deletesMap.set(key, level);
+    step.addChain(new Chain(0, level, Array.from(this.chain.slice(0, level + 1))));
+    this.steps.push(step);
+  }
+
   private buildLinks(type: SolutionType): void {
     const sudoku = this.sudoku;
     const links: number[] = [];
     let index = 0;
     for (let cellIndex = 0; cellIndex < LENGTH; cellIndex++) {
       const cell = sudoku.cells[cellIndex]!;
-      if (cell === 0 || (type === "XY_CHAIN" && ANZ_VALUES[cell] !== 2)) continue;
+      if (
+        cell === 0 ||
+        ((type === "XY_CHAIN" || type === "REMOTE_PAIR") && ANZ_VALUES[cell] !== 2)
+      )
+        continue;
       for (let cellCandidate = 1; cellCandidate <= 9; cellCandidate++) {
         const se = cellIndex * 10 + cellCandidate;
         if (!sudoku.isCandidate(cellIndex, cellCandidate)) {
@@ -218,6 +292,7 @@ export class ChainsSolver {
             (type === "X_CHAIN" || type === "TURBOT_FISH");
           for (const k of ALL_UNITS[constr]!) {
             if (k === cellIndex || !sudoku.isCandidate(k, cellCandidate)) continue;
+            if (type === "REMOTE_PAIR" && sudoku.cells[k] !== cell) continue;
             if (type === "XY_CHAIN" && ANZ_VALUES[sudoku.cells[k]!] !== 2) continue;
             if (c === 2 && (getLine(cellIndex) === getLine(k) || getCol(cellIndex) === getCol(k)))
               continue;
