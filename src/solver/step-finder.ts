@@ -52,7 +52,12 @@ const COLORING_TYPES = new Set<SolutionType>([
   "MULTI_COLORS_2",
 ]);
 
-const UNIQUENESS_TYPES = new Set<SolutionType>(["UNIQUENESS_1", "BUG_PLUS_1"]);
+const UNIQUENESS_TYPES = new Set<SolutionType>([
+  "UNIQUENESS_1",
+  "UNIQUENESS_2",
+  "UNIQUENESS_5",
+  "BUG_PLUS_1",
+]);
 
 export class StepFinder {
   private readonly simple = new SimpleSolver();
