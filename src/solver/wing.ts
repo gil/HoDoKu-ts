@@ -22,6 +22,8 @@ export interface CandidateFinder {
   getCandidates(): CellSet[];
   /** Per-digit sets of cells where the digit is a *valid* placement (may not be pencilled). */
   getCandidatesAllowed(): CellSet[];
+  /** Set of all unsolved cells. */
+  getEmptyCells(): CellSet;
 }
 
 export class WingSolver {

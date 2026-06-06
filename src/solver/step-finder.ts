@@ -16,6 +16,7 @@ import { ChainsSolver } from "./chains.js";
 import { ColoringSolver } from "./coloring.js";
 import { FishSolver } from "./fish.js";
 import { getGiveUpStep } from "./give-up.js";
+import { MiscSolver } from "./misc.js";
 import { SimpleSolver } from "./simple.js";
 import { SingleDigitPatternSolver } from "./single-digit-pattern.js";
 import { UniquenessSolver } from "./uniqueness.js";
@@ -81,6 +82,7 @@ export class StepFinder {
   private readonly coloring = new ColoringSolver();
   private readonly uniqueness = new UniquenessSolver();
   private readonly chains = new ChainsSolver();
+  private readonly misc = new MiscSolver();
 
   private candidates: CellSet[] = Array.from({ length: 10 }, () => new CellSet());
   private candDirty = true;
@@ -105,6 +107,13 @@ export class StepFinder {
       this.candDirty = false;
     }
     return this.candidates;
+  }
+
+  /** Set of all unsolved cells. */
+  getEmptyCells(): CellSet {
+    const s = new CellSet();
+    for (let i = 0; i < LENGTH; i++) if (this.board.values[i] === 0) s.add(i);
+    return s;
   }
 
   /** Per-digit sets of cells where the digit is a valid placement (even if not pencilled). */
@@ -134,6 +143,7 @@ export class StepFinder {
     if (COLORING_TYPES.has(type)) return this.coloring.getStep(this, type);
     if (UNIQUENESS_TYPES.has(type)) return this.uniqueness.getStep(this, type);
     if (CHAIN_TYPES.has(type)) return this.chains.getStep(this, type);
+    if (type === "SUE_DE_COQ") return this.misc.getStep(this, type);
     if (type === "BRUTE_FORCE") return this.getBruteForce();
     if (type === "GIVE_UP") return getGiveUpStep();
     return null;
@@ -148,6 +158,7 @@ export class StepFinder {
     if (COLORING_TYPES.has(type)) return this.coloring.findAll(this, type);
     if (UNIQUENESS_TYPES.has(type)) return this.uniqueness.findAll(this, type);
     if (CHAIN_TYPES.has(type)) return this.chains.findAll(this, type);
+    if (type === "SUE_DE_COQ") return this.misc.findAll(this, type);
     return [];
   }
 

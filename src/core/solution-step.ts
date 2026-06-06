@@ -100,6 +100,9 @@ export class SolutionStep {
   addChain(chain: Chain): void {
     this.chains.push(chain);
   }
+  addAls(indices: number[], candidates: number[]): void {
+    this.alses.push({ indices, candidates });
+  }
 
   clone(): SolutionStep {
     const s = new SolutionStep(this.type);
