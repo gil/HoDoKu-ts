@@ -9,6 +9,25 @@
 
 export const VERSION = "0.0.0";
 
+// Primary facade: generation, hints, solution path, technique summary.
+export {
+  generate,
+  hint,
+  solve,
+  rate,
+  countSolutions,
+  summarize,
+  listTechniques,
+  type BoardInput,
+  type Hint,
+  type CellRef,
+  type SolvePathResult,
+  type TechniqueSummaryEntry,
+  type TechniqueInfo,
+  type GeneratedPuzzleResult,
+  type GenerateOptions,
+} from "./api.js";
+
 export { CellSet } from "./core/cell-set.js";
 export { Board } from "./core/board.js";
 export {
@@ -43,14 +62,9 @@ export {
   isFish,
 } from "./config/defaults.js";
 
-export {
-  SudokuSolver,
-  type Hint,
-  type SolveResult,
-  type SolveOptions,
-} from "./solver/solver.js";
+export { SudokuSolver, type SolveResult, type SolveOptions } from "./solver/solver.js";
 export { StepFinder } from "./solver/step-finder.js";
-export { countSolutions, validSolution } from "./solver/brute-force.js";
+export { validSolution } from "./solver/brute-force.js";
 export {
   generateFullGrid,
   generateSudoku,
