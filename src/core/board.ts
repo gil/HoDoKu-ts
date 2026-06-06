@@ -244,6 +244,16 @@ export class Board {
     return b;
   }
 
+  /** Builds a board by placing every non-zero value (as givens by default). */
+  static fromValues(values: ArrayLike<number>, fixed = true): Board {
+    const b = new Board();
+    for (let i = 0; i < LENGTH; i++) {
+      const v = values[i]!;
+      if (v) b.setCell(i, v, fixed);
+    }
+    return b;
+  }
+
   /**
    * Loads a puzzle. Supports the plain 81-character format (digits 1-9, with
    * '.' or '0' for empty) and the HoDoKu library format

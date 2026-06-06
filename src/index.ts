@@ -42,3 +42,25 @@ export {
   categoryOf,
   isFish,
 } from "./config/defaults.js";
+
+export {
+  SudokuSolver,
+  type Hint,
+  type SolveResult,
+  type SolveOptions,
+} from "./solver/solver.js";
+export { StepFinder } from "./solver/step-finder.js";
+export { countSolutions, validSolution } from "./solver/brute-force.js";
+export {
+  generateFullGrid,
+  generateSudoku,
+  removeClues,
+  type Rng,
+  type GeneratedGrid,
+} from "./generator/generator.js";
+export {
+  generateByDifficulty,
+  generateRated,
+  type GeneratedPuzzle,
+  type GenerateByDifficultyOptions,
+} from "./generator/generate-by-difficulty.js";

@@ -23,6 +23,8 @@ export interface SolveResult {
   solved: boolean;
   score: number;
   level: DifficultyLevel;
+  /** Generation acceptance: solved, within maxLevel, and (if requested) not too easy. */
+  accepted: boolean;
   steps: SolutionStep[];
   configs: StepConfig[];
   board: Board;
@@ -35,6 +37,8 @@ export interface SolveOptions {
   singlesOnly?: boolean;
   /** Solver steps to use (default = sorted DEFAULT_SOLVER_STEPS). */
   steps?: readonly StepConfig[];
+  /** Reject puzzles whose score is below the previous level's ceiling (generation). */
+  rejectTooLowScore?: boolean;
 }
 
 const LEVELS = DEFAULT_DIFFICULTY_LEVELS;
@@ -117,10 +121,22 @@ export class SudokuSolver {
       level = LEVELS[level.ordinal + 1]!;
     }
 
+    const solved = work.isSolved();
+    let accepted = solved && level.ordinal <= maxLevel.ordinal;
+    if (
+      accepted &&
+      opts.rejectTooLowScore &&
+      level.ordinal > DifficultyType.EASY &&
+      score < LEVELS[level.ordinal - 1]!.maxScore
+    ) {
+      accepted = false;
+    }
+
     return {
-      solved: work.isSolved(),
+      solved,
       score,
       level,
+      accepted,
       steps: usedSteps,
       configs: usedConfigs,
       board: work,
