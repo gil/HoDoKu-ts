@@ -9,7 +9,7 @@ import { candidatesOf } from "../core/candidates.js";
 import { CellSet } from "../core/cell-set.js";
 import { SolutionStep } from "../core/solution-step.js";
 import type { SolutionType } from "../core/solution-type.js";
-import { LENGTH } from "../core/tables.js";
+import { BUDDIES, LENGTH } from "../core/tables.js";
 import { applyStep } from "./apply-step.js";
 import { validSolution } from "./brute-force.js";
 import { ColoringSolver } from "./coloring.js";
@@ -17,6 +17,7 @@ import { FishSolver } from "./fish.js";
 import { getGiveUpStep } from "./give-up.js";
 import { SimpleSolver } from "./simple.js";
 import { SingleDigitPatternSolver } from "./single-digit-pattern.js";
+import { UniquenessSolver } from "./uniqueness.js";
 import { WingSolver } from "./wing.js";
 
 const SIMPLE_TYPES = new Set<SolutionType>([
@@ -51,21 +52,27 @@ const COLORING_TYPES = new Set<SolutionType>([
   "MULTI_COLORS_2",
 ]);
 
+const UNIQUENESS_TYPES = new Set<SolutionType>(["UNIQUENESS_1", "BUG_PLUS_1"]);
+
 export class StepFinder {
   private readonly simple = new SimpleSolver();
   private readonly wing = new WingSolver();
   private readonly sdp = new SingleDigitPatternSolver();
   private readonly fish = new FishSolver();
   private readonly coloring = new ColoringSolver();
+  private readonly uniqueness = new UniquenessSolver();
 
   private candidates: CellSet[] = Array.from({ length: 10 }, () => new CellSet());
   private candDirty = true;
+  private allowed: CellSet[] = Array.from({ length: 10 }, () => new CellSet());
+  private allowedDirty = true;
 
   constructor(public board: Board) {}
 
   setBoard(board: Board): void {
     this.board = board;
     this.candDirty = true;
+    this.allowedDirty = true;
   }
 
   /** Per-digit position sets: candidates[d] = cells where digit d is still a candidate. */
@@ -80,12 +87,32 @@ export class StepFinder {
     return this.candidates;
   }
 
+  /** Per-digit sets of cells where the digit is a valid placement (even if not pencilled). */
+  getCandidatesAllowed(): CellSet[] {
+    if (this.allowedDirty) {
+      const empty = new CellSet();
+      empty.setAll();
+      for (let d = 1; d <= 9; d++) this.allowed[d]!.setAll();
+      for (let i = 0; i < LENGTH; i++) {
+        const v = this.board.values[i]!;
+        if (v !== 0) {
+          this.allowed[v]!.andNot(BUDDIES[i]!);
+          empty.remove(i);
+        }
+      }
+      for (let d = 1; d <= 9; d++) this.allowed[d]!.and(empty);
+      this.allowedDirty = false;
+    }
+    return this.allowed;
+  }
+
   getStep(type: SolutionType): SolutionStep | null {
     if (SIMPLE_TYPES.has(type)) return this.simple.getStep(this.board, type);
     if (WING_TYPES.has(type)) return this.wing.getStep(this, type);
     if (SDP_TYPES.has(type)) return this.sdp.getStep(this, type);
     if (BASIC_FISH_TYPES.has(type)) return this.fish.getStep(this, type);
     if (COLORING_TYPES.has(type)) return this.coloring.getStep(this, type);
+    if (UNIQUENESS_TYPES.has(type)) return this.uniqueness.getStep(this, type);
     if (type === "BRUTE_FORCE") return this.getBruteForce();
     if (type === "GIVE_UP") return getGiveUpStep();
     return null;
@@ -98,12 +125,14 @@ export class StepFinder {
     if (SDP_TYPES.has(type)) return this.sdp.findAll(this, type);
     if (BASIC_FISH_TYPES.has(type)) return this.fish.findAll(this, type);
     if (COLORING_TYPES.has(type)) return this.coloring.findAll(this, type);
+    if (UNIQUENESS_TYPES.has(type)) return this.uniqueness.findAll(this, type);
     return [];
   }
 
   doStep(step: SolutionStep): void {
     applyStep(this.board, step);
     this.candDirty = true;
+    this.allowedDirty = true;
   }
 
   private getBruteForce(): SolutionStep | null {

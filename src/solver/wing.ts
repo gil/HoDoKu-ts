@@ -15,10 +15,13 @@ import { SolutionStep } from "../core/solution-step.js";
 import type { SolutionType } from "../core/solution-type.js";
 import { ALL_UNITS, BUDDIES, LENGTH } from "../core/tables.js";
 
-/** Minimal view of the step finder needed by the wing search. */
+/** Minimal view of the step finder needed by the candidate-based solvers. */
 export interface CandidateFinder {
   board: Board;
+  /** Per-digit sets of cells where the digit is a current pencilmark. */
   getCandidates(): CellSet[];
+  /** Per-digit sets of cells where the digit is a *valid* placement (may not be pencilled). */
+  getCandidatesAllowed(): CellSet[];
 }
 
 export class WingSolver {
