@@ -36,6 +36,8 @@ const UR_TYPES = new Set<SolutionType>([
   "HIDDEN_RECTANGLE",
 ]);
 
+const AR_TYPES = new Set<SolutionType>(["AVOIDABLE_RECTANGLE_1", "AVOIDABLE_RECTANGLE_2"]);
+
 function popcount(mask: number): number {
   let c = 0;
   while (mask) {
@@ -55,6 +57,7 @@ export class UniquenessSolver {
   getStep(finder: CandidateFinder, type: SolutionType): SolutionStep | null {
     if (type === "BUG_PLUS_1") return this.getBugPlus1(finder);
     if (UR_TYPES.has(type)) return this.enumerateUR(finder).find((s) => s.type === type) ?? null;
+    if (AR_TYPES.has(type)) return this.enumerateAR(finder).find((s) => s.type === type) ?? null;
     return null;
   }
 
@@ -64,7 +67,102 @@ export class UniquenessSolver {
       return s ? [s] : [];
     }
     if (UR_TYPES.has(type)) return this.enumerateUR(finder).filter((s) => s.type === type);
+    if (AR_TYPES.has(type)) return this.enumerateAR(finder).filter((s) => s.type === type);
     return [];
+  }
+
+  /**
+   * Enumerates Avoidable Rectangles. Start corners are placed-but-not-given cells;
+   * assumes the givens have a unique solution (true for proper puzzles).
+   */
+  private enumerateAR(finder: CandidateFinder): SolutionStep[] {
+    const sudoku = finder.board;
+    const out: SolutionStep[] = [];
+    const seen = new Set<number>();
+    for (let i = 0; i < LENGTH; i++) {
+      if (sudoku.values[i] === 0 || sudoku.isFixed(i)) continue;
+      this.startCellAR(finder, i, sudoku.values[i]!, seen, out);
+    }
+    return out;
+  }
+
+  private startCellAR(
+    finder: CandidateFinder,
+    index11: number,
+    cand1: number,
+    seen: Set<number>,
+    out: SolutionStep[],
+  ): void {
+    const sudoku = finder.board;
+    const line11 = getLine(index11);
+    const col11 = getCol(index11);
+    const block11 = getBlock(index11);
+    for (const index12 of BLOCKS[block11]!) {
+      if (index12 === index11) continue;
+      if (line11 !== getLine(index12) && col11 !== getCol(index12)) continue;
+      if (sudoku.values[index12] === 0 || sudoku.isFixed(index12)) continue;
+      const cand2 = sudoku.values[index12]!;
+      const isLines = line11 === getLine(index12);
+      const unit11 = ALL_UNITS[isLines ? getCol(index11) + 9 : getLine(index11)]!;
+      const unit12 = ALL_UNITS[isLines ? getCol(index12) + 9 : getLine(index12)]!;
+      for (let j = 0; j < unit11.length; j++) {
+        const i21 = unit11[j]!;
+        const i22 = unit12[j]!;
+        if (getBlock(i21) === block11) continue;
+        const v21 = sudoku.values[i21]!;
+        const v22 = sudoku.values[i22]!;
+        const ok =
+          (v21 === cand2 && !sudoku.isFixed(i21) && v22 === 0 && sudoku.isCandidate(i22, cand1) &&
+            sudoku.getAnzCandidates(i22) === 2) ||
+          (v22 === cand1 && !sudoku.isFixed(i22) && v21 === 0 && sudoku.isCandidate(i21, cand2) &&
+            sudoku.getAnzCandidates(i21) === 2) ||
+          (v21 === 0 && sudoku.isCandidate(i21, cand2) && sudoku.getAnzCandidates(i21) === 2 &&
+            v22 === 0 && sudoku.isCandidate(i22, cand1) && sudoku.getAnzCandidates(i22) === 2);
+        if (!ok) continue;
+        const corners = [index11, index12, i21, i22];
+        const key = rectKey(corners);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        this.checkAvoidableRectangle(finder, corners, cand1, cand2, i21, i22, out);
+      }
+    }
+  }
+
+  private checkAvoidableRectangle(
+    finder: CandidateFinder,
+    corners: number[],
+    cand1: number,
+    cand2: number,
+    i21: number,
+    i22: number,
+    out: SolutionStep[],
+  ): void {
+    const sudoku = finder.board;
+    if (sudoku.values[i21] !== 0 || sudoku.values[i22] !== 0) {
+      // Type 1: one opposite corner is solved -> the other can't hold the matching digit.
+      const step = this.makeURStep("AVOIDABLE_RECTANGLE_1", corners, cand1, cand2);
+      if (sudoku.values[i21] !== 0) {
+        if (sudoku.isCandidate(i22, cand1)) step.addCandidateToDelete(i22, cand1);
+      } else if (sudoku.isCandidate(i21, cand2)) {
+        step.addCandidateToDelete(i21, cand2);
+      }
+      if (step.candidatesToDelete.length > 0) out.push(step);
+    } else {
+      // Type 2: both opposite corners bivalue with the same extra candidate.
+      const cands = sudoku.getAllCandidates(i21);
+      let addCand = cands[0]!;
+      if (addCand === cand2) addCand = cands[1]!;
+      if (!sudoku.isCandidate(i22, addCand)) return;
+      const set = BUDDIES[i21]!.clone();
+      set.and(BUDDIES[i22]!);
+      set.and(finder.getCandidates()[addCand]!);
+      if (set.isEmpty()) return;
+      const step = this.makeURStep("AVOIDABLE_RECTANGLE_2", corners, cand1, cand2);
+      for (const idx of set) step.addCandidateToDelete(idx, addCand);
+      step.addEndoFin(i21, addCand);
+      step.addEndoFin(i22, addCand);
+      out.push(step);
+    }
   }
 
   /** Enumerates every Unique Rectangle in the grid and classifies each. */
