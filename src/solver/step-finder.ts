@@ -12,6 +12,7 @@ import type { SolutionType } from "../core/solution-type.js";
 import { LENGTH } from "../core/tables.js";
 import { applyStep } from "./apply-step.js";
 import { validSolution } from "./brute-force.js";
+import { ColoringSolver } from "./coloring.js";
 import { FishSolver } from "./fish.js";
 import { getGiveUpStep } from "./give-up.js";
 import { SimpleSolver } from "./simple.js";
@@ -41,11 +42,21 @@ const SDP_TYPES = new Set<SolutionType>(["SKYSCRAPER", "TWO_STRING_KITE", "EMPTY
 
 const BASIC_FISH_TYPES = new Set<SolutionType>(["X_WING", "SWORDFISH", "JELLYFISH"]);
 
+const COLORING_TYPES = new Set<SolutionType>([
+  "SIMPLE_COLORS",
+  "SIMPLE_COLORS_TRAP",
+  "SIMPLE_COLORS_WRAP",
+  "MULTI_COLORS",
+  "MULTI_COLORS_1",
+  "MULTI_COLORS_2",
+]);
+
 export class StepFinder {
   private readonly simple = new SimpleSolver();
   private readonly wing = new WingSolver();
   private readonly sdp = new SingleDigitPatternSolver();
   private readonly fish = new FishSolver();
+  private readonly coloring = new ColoringSolver();
 
   private candidates: CellSet[] = Array.from({ length: 10 }, () => new CellSet());
   private candDirty = true;
@@ -74,6 +85,7 @@ export class StepFinder {
     if (WING_TYPES.has(type)) return this.wing.getStep(this, type);
     if (SDP_TYPES.has(type)) return this.sdp.getStep(this, type);
     if (BASIC_FISH_TYPES.has(type)) return this.fish.getStep(this, type);
+    if (COLORING_TYPES.has(type)) return this.coloring.getStep(this, type);
     if (type === "BRUTE_FORCE") return this.getBruteForce();
     if (type === "GIVE_UP") return getGiveUpStep();
     return null;
@@ -85,6 +97,7 @@ export class StepFinder {
     if (WING_TYPES.has(type)) return this.wing.findAll(this, type);
     if (SDP_TYPES.has(type)) return this.sdp.findAll(this, type);
     if (BASIC_FISH_TYPES.has(type)) return this.fish.findAll(this, type);
+    if (COLORING_TYPES.has(type)) return this.coloring.findAll(this, type);
     return [];
   }
 
