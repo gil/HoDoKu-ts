@@ -101,16 +101,16 @@ function checkRCInt(c11: number, c12: number, c21: number, c22: number): number 
 export class AlsSolver {
   getStep(finder: CandidateFinder, type: SolutionType): SolutionStep | null {
     if (type === "ALS_XZ") return this.alsXZ(finder, true)[0] ?? null;
-    if (type === "ALS_XY_WING") return this.alsXYWing(finder, true)[0] ?? null;
-    if (type === "ALS_XY_CHAIN") return this.alsXYChain(finder)[0] ?? null;
+    if (type === "ALS_XY_WING") return this.alsXYWing(finder, true, false)[0] ?? null;
+    if (type === "ALS_XY_CHAIN") return this.alsXYChain(finder, true, 50)[0] ?? null;
     if (type === "DEATH_BLOSSOM") return this.deathBlossom(finder)[0] ?? null;
     return null;
   }
 
   findAll(finder: CandidateFinder, type: SolutionType): SolutionStep[] {
     if (type === "ALS_XZ") return this.alsXZ(finder, false);
-    if (type === "ALS_XY_WING") return this.alsXYWing(finder, false);
-    if (type === "ALS_XY_CHAIN") return this.alsXYChain(finder);
+    if (type === "ALS_XY_WING") return this.alsXYWing(finder, false, true);
+    if (type === "ALS_XY_CHAIN") return this.alsXYChain(finder, false, 6);
     if (type === "DEATH_BLOSSOM") return this.deathBlossom(finder);
     return [];
   }
@@ -142,7 +142,7 @@ export class AlsSolver {
     return out;
   }
 
-  private alsXYWing(finder: CandidateFinder, onlyOne: boolean): SolutionStep[] {
+  private alsXYWing(finder: CandidateFinder, onlyOne: boolean, allowOverlap: boolean): SolutionStep[] {
     const alses = enumerateAlses(finder);
     const { rcs } = computeRestrictedCommons(alses);
     const out: SolutionStep[] = [];
@@ -176,7 +176,7 @@ export class AlsSolver {
         const a = alses[aI]!;
         const b = alses[bI]!;
         const c = alses[cI]!;
-        if (!a.indices.andEmpty(b.indices)) continue; // no overlap (overlap disabled)
+        if (!allowOverlap && !a.indices.andEmpty(b.indices)) continue;
         const union = a.indices.clone();
         union.or(b.indices);
         if (union.equals(a.indices) || union.equals(b.indices)) continue;
@@ -204,13 +204,12 @@ export class AlsSolver {
     return out;
   }
 
-  private alsXYChain(finder: CandidateFinder): SolutionStep[] {
+  private alsXYChain(finder: CandidateFinder, onlyForward: boolean, MAX_RC: number): SolutionStep[] {
     const alses = enumerateAlses(finder);
-    const { rcs, starts, ends } = computeRestrictedCommons(alses, true, true);
+    const { rcs, starts, ends } = computeRestrictedCommons(alses, true, onlyForward);
     const out: SolutionStep[] = [];
     const deletes = new Map<string, number>(); // elim key -> step index
     const alsCountAt: number[] = [];
-    const MAX_RC = 50;
     const chainArr: RestrictedCommon[] = [];
     const inChain = new Array<boolean>(alses.length).fill(false);
     let firstRC: RestrictedCommon | null = null;
