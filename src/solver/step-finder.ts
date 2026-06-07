@@ -46,7 +46,13 @@ const SIMPLE_TYPES = new Set<SolutionType>([
 
 const WING_TYPES = new Set<SolutionType>(["XY_WING", "XYZ_WING", "W_WING"]);
 
-const SDP_TYPES = new Set<SolutionType>(["SKYSCRAPER", "TWO_STRING_KITE", "EMPTY_RECTANGLE"]);
+const SDP_TYPES = new Set<SolutionType>([
+  "SKYSCRAPER",
+  "TWO_STRING_KITE",
+  "EMPTY_RECTANGLE",
+  "DUAL_TWO_STRING_KITE",
+  "DUAL_EMPTY_RECTANGLE",
+]);
 
 
 const COLORING_TYPES = new Set<SolutionType>([

@@ -24,6 +24,7 @@ const IMPLEMENTED = new Set([
   "0803", // W-Wing
   "0400", // Skyscraper
   "0401", // 2-String Kite
+  "0404", // Dual 2-String Kite
   // Fish: basic / finned / sashimi / franken / finned-franken / mutant / finned-mutant
   "0300", "0301", "0302", "0303", "0304", "0305",
   "0310", "0311", "0312", "0313", "0314", "0315",

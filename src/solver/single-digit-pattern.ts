@@ -61,6 +61,8 @@ export class SingleDigitPatternSolver {
   private collector: SolutionStep[] | null = null;
 
   findAll(finder: CandidateFinder, type: SolutionType): SolutionStep[] {
+    if (type === "DUAL_TWO_STRING_KITE") return this.findDuals(finder, "TWO_STRING_KITE", type);
+    if (type === "DUAL_EMPTY_RECTANGLE") return this.findDuals(finder, "EMPTY_RECTANGLE", type);
     const out: SolutionStep[] = [];
     this.collector = out;
     try {
@@ -87,9 +89,61 @@ export class SingleDigitPatternSolver {
         return this.findTwoStringKite(finder);
       case "EMPTY_RECTANGLE":
         return this.findEmptyRectangle(finder);
+      case "DUAL_TWO_STRING_KITE":
+        return this.findDuals(finder, "TWO_STRING_KITE", "DUAL_TWO_STRING_KITE")[0] ?? null;
+      case "DUAL_EMPTY_RECTANGLE":
+        return this.findDuals(finder, "EMPTY_RECTANGLE", "DUAL_EMPTY_RECTANGLE")[0] ?? null;
       default:
         return null;
     }
+  }
+
+  /**
+   * Dual 2-String-Kite / Dual Empty Rectangle: two base steps sharing the same
+   * connecting box (kites: same box cells; ERs: same box + fins) but with
+   * different eliminations are combined into one dual step.
+   */
+  private findDuals(
+    finder: CandidateFinder,
+    baseType: SolutionType,
+    dualType: SolutionType,
+  ): SolutionStep[] {
+    const base = this.findAll(finder, baseType);
+    const out: SolutionStep[] = [];
+    const isKite = dualType === "DUAL_TWO_STRING_KITE";
+    for (let i = 0; i < base.length - 1; i++) {
+      for (let j = i + 1; j < base.length; j++) {
+        const s1 = base[i]!;
+        const s2 = base[j]!;
+        if (isKite) {
+          const b11 = s1.indices[2]!;
+          const b12 = s1.indices[3]!;
+          const b21 = s2.indices[2]!;
+          const b22 = s2.indices[3]!;
+          if (!((b11 === b21 && b12 === b22) || (b12 === b21 && b11 === b22))) continue;
+        } else {
+          if (s1.entity !== s2.entity || s1.entityNumber !== s2.entityNumber) continue;
+          if (s1.fins.length !== s2.fins.length) continue;
+          let finsEqual = true;
+          for (let k = 0; k < s1.fins.length; k++) {
+            if (s1.fins[k]!.index !== s2.fins[k]!.index || s1.fins[k]!.value !== s2.fins[k]!.value) {
+              finsEqual = false;
+              break;
+            }
+          }
+          if (!finsEqual) continue;
+        }
+        const d1 = s1.candidatesToDelete[0]!;
+        const d2 = s2.candidatesToDelete[0]!;
+        if (d1.index === d2.index && d1.value === d2.value) continue; // same elimination
+        const dual = s1.clone();
+        dual.type = dualType;
+        for (const idx of s2.indices) dual.addIndex(idx);
+        dual.addCandidateToDelete(d2.index, d2.value);
+        out.push(dual);
+      }
+    }
+    return out;
   }
 
   private findSkyscraper(finder: CandidateFinder): SolutionStep | null {
