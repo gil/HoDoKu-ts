@@ -79,12 +79,16 @@ const NICE_LOOP_EXACT = new Set<SolutionType>([
   "AIC",
 ]);
 
-// Grouped variants + forcing use the sound medusa engine (best-effort).
-const TABLING_TYPES = new Set<SolutionType>([
+// Grouped nice loops / AIC use the faithful Trebor-tables engine with group nodes.
+const GROUPED_NICE_LOOP_EXACT = new Set<SolutionType>([
   "GROUPED_NICE_LOOP",
   "GROUPED_CONTINUOUS_NICE_LOOP",
   "GROUPED_DISCONTINUOUS_NICE_LOOP",
   "GROUPED_AIC",
+]);
+
+// Forcing chains/nets use the sound medusa engine (best-effort).
+const TABLING_TYPES = new Set<SolutionType>([
   "FORCING_CHAIN",
   "FORCING_CHAIN_CONTRADICTION",
   "FORCING_NET",
@@ -182,6 +186,7 @@ export class StepFinder {
     if (type === "ALS_XZ" || type === "ALS_XY_WING" || type === "ALS_XY_CHAIN" || type === "DEATH_BLOSSOM") return this.als.getStep(this, type);
     if (type === "TEMPLATE_SET" || type === "TEMPLATE_DEL") return this.template.getStep(this, type);
     if (NICE_LOOP_EXACT.has(type)) return this.tablingChains.getStep(this, type);
+    if (GROUPED_NICE_LOOP_EXACT.has(type)) return this.tablingChains.getStep(this, type);
     if (TABLING_TYPES.has(type)) return this.tabling.getStep(this, type);
     if (type === "BRUTE_FORCE") return this.getBruteForce();
     if (type === "GIVE_UP") return getGiveUpStep();
@@ -200,7 +205,8 @@ export class StepFinder {
     if (type === "SUE_DE_COQ") return this.misc.findAll(this, type);
     if (type === "ALS_XZ" || type === "ALS_XY_WING" || type === "ALS_XY_CHAIN" || type === "DEATH_BLOSSOM") return this.als.findAll(this, type);
     if (type === "TEMPLATE_SET" || type === "TEMPLATE_DEL") return this.template.findAll(this, type);
-    if (NICE_LOOP_EXACT.has(type)) return this.tablingChains.findAll(this);
+    if (NICE_LOOP_EXACT.has(type)) return this.tablingChains.findAll(this, type);
+    if (GROUPED_NICE_LOOP_EXACT.has(type)) return this.tablingChains.findAll(this, type);
     if (TABLING_TYPES.has(type)) return this.tabling.findAll(this, type);
     return [];
   }

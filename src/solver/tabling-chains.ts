@@ -13,16 +13,81 @@
 import { CellSet } from "../core/cell-set.js";
 import {
   Chain,
+  GROUP_NODE,
   getSCandidate,
   getSCellIndex,
+  getSCellIndex2,
+  getSCellIndex3,
+  getSNodeType,
   isSStrong,
   makeSimpleEntry,
+  NORMAL_NODE,
 } from "../core/chain.js";
 import { SolutionStep } from "../core/solution-step.js";
 import type { SolutionType } from "../core/solution-type.js";
 import { TableEntry } from "../core/table-entry.js";
-import { BUDDIES, CONSTRAINTS, LENGTH, UNIT_TEMPLATES } from "../core/tables.js";
+import {
+  BUDDIES,
+  CONSTRAINTS,
+  getBlock,
+  getCol,
+  getLine,
+  LENGTH,
+  UNIT_TEMPLATES,
+} from "../core/tables.js";
 import type { CandidateFinder } from "./wing.js";
+
+const LINE_TPL = UNIT_TEMPLATES.slice(0, 9);
+const COL_TPL = UNIT_TEMPLATES.slice(9, 18);
+const BLOCK_TPL = UNIT_TEMPLATES.slice(18, 27);
+
+interface GroupNode {
+  cand: number;
+  indices: CellSet;
+  buddies: CellSet;
+  line: number;
+  col: number;
+  block: number;
+  index1: number;
+  index2: number;
+  index3: number;
+}
+
+function makeGroupNode(cand: number, indices: CellSet): GroupNode {
+  const arr = indices.toArray();
+  const index1 = arr[0]!;
+  const index2 = arr[1]!;
+  const index3 = arr.length > 2 ? arr[2]! : -1;
+  const buddies = BUDDIES[index1]!.clone();
+  buddies.and(BUDDIES[index2]!);
+  if (index3 >= 0) buddies.and(BUDDIES[index3]!);
+  let line = -1;
+  let col = -1;
+  if (getLine(index1) === getLine(index2)) line = getLine(index1);
+  if (getCol(index1) === getCol(index2)) col = getCol(index1);
+  return { cand, indices: indices.clone(), buddies, line, col, block: getBlock(index1), index1, index2, index3 };
+}
+
+/** All group nodes (>=2 candidates in a line/col ∩ block intersection). */
+function getGroupNodes(finder: CandidateFinder): GroupNode[] {
+  const out: GroupNode[] = [];
+  const candidates = finder.getCandidates();
+  for (const houses of [LINE_TPL, COL_TPL]) {
+    for (let i = 0; i < 9; i++) {
+      for (let cand = 1; cand <= 9; cand++) {
+        const candInHouse = houses[i]!.clone();
+        candInHouse.and(candidates[cand]!);
+        if (candInHouse.isEmpty()) continue;
+        for (let b = 0; b < 9; b++) {
+          const tmp = candInHouse.clone();
+          tmp.and(BLOCK_TPL[b]!);
+          if (tmp.size() >= 2) out.push(makeGroupNode(cand, tmp));
+        }
+      }
+    }
+  }
+  return out;
+}
 
 export class TablingChainsSolver {
   private onTable: TableEntry[] = [];
@@ -36,6 +101,12 @@ export class TablingChainsSolver {
   private deletesMap = new Map<string, number>();
   private finder!: CandidateFinder;
   private globalStep = new SolutionStep("AIC");
+  private withGroupNodes = false;
+  private onlyGroupedNiceLoops = false;
+  private extendedTable: TableEntry[] = [];
+  private extendedTableMap = new Map<number, number>();
+  private extendedTableIndex = 0;
+  private groupNodes: GroupNode[] = [];
 
   constructor() {
     for (let i = 0; i < LENGTH * 10; i++) {
@@ -45,29 +116,133 @@ export class TablingChainsSolver {
   }
 
   getStep(finder: CandidateFinder, type: SolutionType): SolutionStep | null {
-    const all = this.getNiceLoops(finder);
+    const grouped = isGrouped(type);
+    const all = this.getNiceLoops(finder, grouped, grouped);
     return all.find((s) => stepClass(s.type) === stepClass(type)) ?? all[0] ?? null;
   }
 
-  findAll(finder: CandidateFinder): SolutionStep[] {
-    return this.getNiceLoops(finder);
+  findAll(finder: CandidateFinder, type?: SolutionType): SolutionStep[] {
+    const grouped = type ? isGrouped(type) : false;
+    return this.getNiceLoops(finder, grouped, grouped);
   }
 
-  private getNiceLoops(finder: CandidateFinder): SolutionStep[] {
+  private getNiceLoops(
+    finder: CandidateFinder,
+    withGroupNodes: boolean,
+    onlyGrouped: boolean,
+  ): SolutionStep[] {
     this.finder = finder;
+    this.withGroupNodes = withGroupNodes;
+    this.onlyGroupedNiceLoops = onlyGrouped;
     this.steps = [];
     this.deletesMap.clear();
     for (let i = 0; i < this.onTable.length; i++) {
       this.onTable[i]!.reset();
       this.offTable[i]!.reset();
     }
+    this.extendedTableMap.clear();
+    this.extendedTableIndex = 0;
     this.fillTables();
+    if (this.withGroupNodes) this.fillTablesWithGroupNodes();
     this.expandTables(this.onTable);
     this.expandTables(this.offTable);
     this.checkNiceLoops(this.onTable);
     this.checkNiceLoops(this.offTable);
     this.checkAics(this.offTable);
     return this.steps;
+  }
+
+  private getNextExtendedTableEntry(index: number): TableEntry {
+    let e = this.extendedTable[index];
+    if (e === undefined) {
+      e = new TableEntry();
+      this.extendedTable[index] = e;
+    } else {
+      e.reset();
+    }
+    return e;
+  }
+
+  private fillTablesWithGroupNodes(): void {
+    const candidates = this.finder.getCandidates();
+    this.groupNodes = getGroupNodes(this.finder);
+    const gns = this.groupNodes;
+    for (let i = 0; i < gns.length; i++) {
+      const gn = gns[i]!;
+      const onEntry = this.getNextExtendedTableEntry(this.extendedTableIndex);
+      onEntry.add(gn.index1, gn.index2, gn.index3, GROUP_NODE, gn.cand, true, 0, 0, 0, 0, 0, 0);
+      this.extendedTableMap.set(onEntry.entries[0]!, this.extendedTableIndex);
+      this.extendedTableIndex++;
+      const offEntry = this.getNextExtendedTableEntry(this.extendedTableIndex);
+      offEntry.add(gn.index1, gn.index2, gn.index3, GROUP_NODE, gn.cand, false, 0, 0, 0, 0, 0, 0);
+      this.extendedTableMap.set(offEntry.entries[0]!, this.extendedTableIndex);
+      this.extendedTableIndex++;
+
+      const seen = candidates[gn.cand]!.clone();
+      seen.and(gn.buddies);
+      if (!seen.isEmpty()) {
+        for (const index of seen.toArray()) {
+          onEntry.addSimple(index, gn.cand, false);
+          this.onTable[index * 10 + gn.cand]!.add(gn.index1, gn.index2, gn.index3, GROUP_NODE, gn.cand, false, 0, 0, 0, 0, 0, 0);
+        }
+        const inBlock = seen.clone();
+        inBlock.and(BLOCK_TPL[gn.block]!);
+        if (inBlock.size() === 1) {
+          const idx = inBlock.toArray()[0]!;
+          offEntry.addSimple(idx, gn.cand, true);
+          this.offTable[idx * 10 + gn.cand]!.add(gn.index1, gn.index2, gn.index3, GROUP_NODE, gn.cand, true, 0, 0, 0, 0, 0, 0);
+        }
+        const inLineCol = seen.clone();
+        inLineCol.and(gn.line !== -1 ? LINE_TPL[gn.line]! : COL_TPL[gn.col]!);
+        if (inLineCol.size() === 1) {
+          const idx = inLineCol.toArray()[0]!;
+          offEntry.addSimple(idx, gn.cand, true);
+          this.offTable[idx * 10 + gn.cand]!.add(gn.index1, gn.index2, gn.index3, GROUP_NODE, gn.cand, true, 0, 0, 0, 0, 0, 0);
+        }
+      }
+
+      // links between two group nodes sharing a house
+      let lineAnz = 0;
+      let line1 = -1;
+      let colAnz = 0;
+      let col1 = -1;
+      let blockAnz = 0;
+      let block1 = -1;
+      for (let j = 0; j < gns.length; j++) {
+        if (j === i) continue;
+        const gn2 = gns[j]!;
+        if (gn.cand !== gn2.cand) continue;
+        const ov = gn.indices.clone();
+        if (!ov.andEmpty(gn2.indices)) continue; // overlap
+        if (gn.line !== -1 && gn.line === gn2.line) {
+          lineAnz++;
+          if (lineAnz === 1) line1 = j;
+          onEntry.add(gn2.index1, gn2.index2, gn2.index3, GROUP_NODE, gn.cand, false, 0, 0, 0, 0, 0, 0);
+        }
+        if (gn.col !== -1 && gn.col === gn2.col) {
+          colAnz++;
+          if (colAnz === 1) col1 = j;
+          onEntry.add(gn2.index1, gn2.index2, gn2.index3, GROUP_NODE, gn.cand, false, 0, 0, 0, 0, 0, 0);
+        }
+        if (gn.block === gn2.block) {
+          blockAnz++;
+          if (blockAnz === 1) block1 = j;
+          onEntry.add(gn2.index1, gn2.index2, gn2.index3, GROUP_NODE, gn.cand, false, 0, 0, 0, 0, 0, 0);
+        }
+      }
+      const offGroupLink = (house: CellSet, gn2: GroupNode): void => {
+        const tmp = house.clone();
+        tmp.and(candidates[gn.cand]!);
+        tmp.andNot(gn.indices);
+        tmp.andNot(gn2.indices);
+        if (tmp.isEmpty()) {
+          offEntry.add(gn2.index1, gn2.index2, gn2.index3, GROUP_NODE, gn.cand, true, 0, 0, 0, 0, 0, 0);
+        }
+      };
+      if (lineAnz === 1) offGroupLink(LINE_TPL[gn.line]!, gns[line1]!);
+      if (colAnz === 1) offGroupLink(COL_TPL[gn.col]!, gns[col1]!);
+      if (blockAnz === 1) offGroupLink(BLOCK_TPL[gn.block]!, gns[block1]!);
+    }
   }
 
   private fillTables(): void {
@@ -111,9 +286,20 @@ export class TablingChainsSolver {
       for (let j = 1; j < dest.entries.length; j++) {
         if (dest.entries[j] === 0) break;
         if (dest.isFull()) break;
-        const srcTableIndex = dest.getCellIndex(j) * 10 + dest.getCandidate(j);
-        const isFromOnTable = dest.isStrong(j);
-        const src = isFromOnTable ? this.onTable[srcTableIndex]! : this.offTable[srcTableIndex]!;
+        let srcTableIndex = dest.getCellIndex(j) * 10 + dest.getCandidate(j);
+        let isFromExtended = false;
+        let isFromOnTable = false;
+        let src: TableEntry;
+        if (getSNodeType(dest.entries[j]!) !== NORMAL_NODE) {
+          const tmpSI = this.extendedTableMap.get(dest.entries[j]!);
+          if (tmpSI === undefined) continue;
+          srcTableIndex = tmpSI;
+          src = this.extendedTable[srcTableIndex]!;
+          isFromExtended = true;
+        } else {
+          isFromOnTable = dest.isStrong(j);
+          src = isFromOnTable ? this.onTable[srcTableIndex]! : this.offTable[srcTableIndex]!;
+        }
         if (src.index === 0) continue;
         const srcBaseDistance = dest.getDistance(j);
         for (let k = 1; k < src.index; k++) {
@@ -124,18 +310,27 @@ export class TablingChainsSolver {
             const orgIndex = dest.getEntryIndex(srcEntry);
             if (
               dest.isExpanded(orgIndex) &&
-              dest.getDistance(orgIndex) > srcBaseDistance + srcDistance
+              (dest.getDistance(orgIndex) > srcBaseDistance + srcDistance ||
+                (dest.getDistance(orgIndex) === srcBaseDistance + srcDistance &&
+                  dest.getNodeType(orgIndex) > src.getNodeType(k)))
             ) {
-              dest.rets[orgIndex] = { idx: [srcTableIndex, 0, 0, 0, 0], distance: 0, expanded: true, onTable: isFromOnTable, extended: false };
+              dest.rets[orgIndex] = { idx: [srcTableIndex, 0, 0, 0, 0], distance: 0, expanded: true, onTable: false, extended: false };
+              dest.setExpanded(orgIndex);
+              if (isFromExtended) dest.setExtendedTable(orgIndex);
+              else if (isFromOnTable) dest.setOnTable(orgIndex);
               dest.setDistance(orgIndex, srcBaseDistance + srcDistance);
             }
           } else {
-            const srcCellIndex = src.getCellIndex(k);
             const srcCand = src.getCandidate(k);
             const srcStrong = src.isStrong(k);
-            dest.addWithRet(srcCellIndex, srcCand, srcStrong, srcTableIndex);
+            if (getSNodeType(srcEntry) === NORMAL_NODE) {
+              dest.addWithRet(src.getCellIndex(k), srcCand, srcStrong, srcTableIndex);
+            } else {
+              dest.add(getSCellIndex(srcEntry), getSCellIndex2(srcEntry), getSCellIndex3(srcEntry), getSNodeType(srcEntry), srcCand, srcStrong, srcTableIndex, 0, 0, 0, 0, 0);
+            }
             dest.setExpanded(dest.index - 1);
-            if (isFromOnTable) dest.setOnTable(dest.index - 1);
+            if (isFromExtended) dest.setExtendedTable(dest.index - 1);
+            else if (isFromOnTable) dest.setOnTable(dest.index - 1);
             dest.setDistance(dest.index - 1, srcBaseDistance + srcDistance);
           }
         }
@@ -237,8 +432,8 @@ export class TablingChainsSolver {
         // weak link between cells
         if (i > 0 && !isSStrong(nlChain[i]!) && getSCellIndex(nlChain[i - 1]!) !== getSCellIndex(nlChain[i]!)) {
           const actCand = getSCandidate(nlChain[i]!);
-          const tmp = BUDDIES[getSCellIndex(nlChain[i - 1]!)]!.clone();
-          tmp.and(BUDDIES[getSCellIndex(nlChain[i]!)]!);
+          const tmp = nodeBuddies(nlChain[i - 1]!);
+          tmp.and(nodeBuddies(nlChain[i]!));
           tmp.andNot(this.chainSet);
           tmp.remove(startIndex);
           tmp.and(candidates[actCand]!);
@@ -246,7 +441,32 @@ export class TablingChainsSolver {
         }
       }
     }
+    if (this.globalStep.candidatesToDelete.length === 0) return;
+    if (!this.reclassifyGrouped(localChain)) return;
     this.finishStep(localChain);
+  }
+
+  /**
+   * If the chain contains a group node, upgrades the type to its GROUPED_*
+   * variant. Returns false when only grouped loops are wanted but the chain is
+   * plain (so it should be skipped).
+   */
+  private reclassifyGrouped(chain: Chain): boolean {
+    let grouped = false;
+    for (let i = chain.start; i <= chain.end; i++) {
+      if (getSNodeType(chain.nodes[i]!) !== NORMAL_NODE) {
+        grouped = true;
+        break;
+      }
+    }
+    if (grouped) {
+      const t = this.globalStep.type;
+      if (t === "DISCONTINUOUS_NICE_LOOP") this.globalStep.type = "GROUPED_DISCONTINUOUS_NICE_LOOP";
+      else if (t === "CONTINUOUS_NICE_LOOP") this.globalStep.type = "GROUPED_CONTINUOUS_NICE_LOOP";
+      else if (t === "AIC") this.globalStep.type = "GROUPED_AIC";
+    }
+    if (this.onlyGroupedNiceLoops && !grouped) return false;
+    return true;
   }
 
   private checkAic(entry: TableEntry, entryIndex: number): void {
@@ -270,6 +490,7 @@ export class TablingChainsSolver {
     if (this.globalStep.candidatesToDelete.length === 0) return;
     const built = this.addChain(entry, entry.getCellIndex(entryIndex), entry.getCandidate(entryIndex), entry.isStrong(entryIndex), false, true);
     if (!built || this.globalStep.chains.length === 0) return;
+    if (!this.reclassifyGrouped(this.globalStep.chains[0]!)) return;
     this.finishStep(this.globalStep.chains[0]!);
   }
 
@@ -342,18 +563,20 @@ export class TablingChainsSolver {
     let first = index;
     let expanded = false;
     this.chain[this.chainIndex++] = cur.entries[first]!;
-    this.chainSet.add(cur.getCellIndex(first));
+    this.addToChainSet(cur.entries[first]!);
     while (first !== 0 && this.chainIndex < this.chain.length) {
       if (cur.isExpanded(first)) {
         const ti = org.getRetIndex(first, 0);
-        cur = cur.isOnTable(first) ? this.onTable[ti]! : this.offTable[ti]!;
+        if (org.isExtendedTable(first)) cur = this.extendedTable[ti]!;
+        else if (org.isOnTable(first)) cur = this.onTable[ti]!;
+        else cur = this.offTable[ti]!;
         expanded = true;
         first = cur.getEntryIndex(org.entries[first]!);
       }
       const ri0 = cur.getRetIndex(first, 0);
       first = ri0;
       this.chain[this.chainIndex++] = cur.entries[ri0]!;
-      this.chainSet.add(cur.getCellIndex(ri0));
+      this.addToChainSet(cur.entries[ri0]!);
       if (expanded && first === 0) {
         const retEntry = cur.entries[0]!;
         cur = org;
@@ -362,12 +585,49 @@ export class TablingChainsSolver {
       }
     }
   }
+
+  private addToChainSet(entry: number): void {
+    this.chainSet.add(getSCellIndex(entry));
+    if (getSNodeType(entry) === GROUP_NODE) {
+      const c2 = getSCellIndex2(entry);
+      if (c2 !== -1) this.chainSet.add(c2);
+      const c3 = getSCellIndex3(entry);
+      if (c3 !== -1) this.chainSet.add(c3);
+    }
+  }
+}
+
+/** Node-aware buddies: a group node's buddies are the cells that see all its cells. */
+function nodeBuddies(entry: number): CellSet {
+  const set = BUDDIES[getSCellIndex(entry)]!.clone();
+  if (getSNodeType(entry) === GROUP_NODE) {
+    set.and(BUDDIES[getSCellIndex2(entry)]!);
+    const c3 = getSCellIndex3(entry);
+    if (c3 !== -1) set.and(BUDDIES[c3]!);
+  }
+  return set;
+}
+
+function isGrouped(type: SolutionType): boolean {
+  return (
+    type === "GROUPED_NICE_LOOP" ||
+    type === "GROUPED_CONTINUOUS_NICE_LOOP" ||
+    type === "GROUPED_DISCONTINUOUS_NICE_LOOP" ||
+    type === "GROUPED_AIC"
+  );
 }
 
 /** Maps any nice-loop/AIC variant to its umbrella class for getStep matching. */
 function stepClass(type: SolutionType): string {
   if (type === "CONTINUOUS_NICE_LOOP" || type === "DISCONTINUOUS_NICE_LOOP" || type === "NICE_LOOP") {
     return "NICE_LOOP";
+  }
+  if (
+    type === "GROUPED_CONTINUOUS_NICE_LOOP" ||
+    type === "GROUPED_DISCONTINUOUS_NICE_LOOP" ||
+    type === "GROUPED_NICE_LOOP"
+  ) {
+    return "GROUPED_NICE_LOOP";
   }
   return type;
 }
