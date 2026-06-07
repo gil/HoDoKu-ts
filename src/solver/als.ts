@@ -236,8 +236,12 @@ export function enumerateAlses(finder: CandidateFinder): Als[] {
   return alses;
 }
 
-/** Forward-only (i<j), no overlap. Each pair yields 0-2 RC candidates. */
-export function computeRestrictedCommons(alses: Als[]): RestrictedCommon[] {
+/**
+ * Forward-only (i<j) Restricted Commons. Overlapping ALS are allowed by default
+ * (matching HoDoKu's all-steps RC generation); an RC instance may not lie in the
+ * overlap. Each pair yields 0-2 RC candidates.
+ */
+export function computeRestrictedCommons(alses: Als[], withOverlap = true): RestrictedCommon[] {
   const rcs: RestrictedCommon[] = [];
   const inter = new CellSet();
   for (let i = 0; i < alses.length; i++) {
@@ -246,7 +250,7 @@ export function computeRestrictedCommons(alses: Als[]): RestrictedCommon[] {
       const als2 = alses[j]!;
       inter.set(als1.indices);
       inter.and(als2.indices);
-      if (!inter.isEmpty()) continue; // no overlap allowed
+      if (!withOverlap && !inter.isEmpty()) continue;
       const possible = als1.candidates & als2.candidates;
       if (possible === 0) continue;
       let rc: RestrictedCommon | null = null;
