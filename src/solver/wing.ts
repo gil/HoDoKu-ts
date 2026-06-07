@@ -24,6 +24,8 @@ export interface CandidateFinder {
   getCandidatesAllowed(): CellSet[];
   /** Set of all unsolved cells. */
   getEmptyCells(): CellSet;
+  /** Per-digit sets of cells already SET to that digit (for tabling forcing chains). */
+  getPositions(): CellSet[];
 }
 
 export class WingSolver {

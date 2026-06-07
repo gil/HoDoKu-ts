@@ -142,6 +142,14 @@ export class CellSet {
     this.cache = null;
   }
 
+  /** this = this | ~other */
+  orNot(other: CellSet): void {
+    this.w0 = (this.w0 | ~other.w0) >>> 0;
+    this.w1 = (this.w1 | ~other.w1) >>> 0;
+    this.w2 = ((this.w2 | ~other.w2) & W2_MASK) >>> 0;
+    this.cache = null;
+  }
+
   /** this = s1 & s2 */
   setAnd(s1: CellSet, s2: CellSet): void {
     this.w0 = (s1.w0 & s2.w0) >>> 0;

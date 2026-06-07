@@ -115,6 +115,8 @@ export class TablingChainsSolver {
   private extendedTableIndex = 0;
   private groupNodes: GroupNode[] = [];
   private alses: Als[] = [];
+  private tmpOnSets: CellSet[] = Array.from({ length: 10 }, () => new CellSet());
+  private tmpOffSets: CellSet[] = Array.from({ length: 10 }, () => new CellSet());
 
   constructor() {
     for (let i = 0; i < LENGTH * 10; i++) {
@@ -163,6 +165,265 @@ export class TablingChainsSolver {
     this.checkNiceLoops(this.offTable);
     this.checkAics(this.offTable);
     return this.steps;
+  }
+
+  /** Faithful Trebor-tables Forcing Chains (chainsOnly; contradiction + verity). */
+  getForcingChains(finder: CandidateFinder): SolutionStep[] {
+    this.finder = finder;
+    this.withGroupNodes = true;
+    this.withAlsNodes = true;
+    this.onlyGroupedNiceLoops = false;
+    this.steps = [];
+    this.deletesMap.clear();
+    for (let i = 0; i < this.onTable.length; i++) {
+      this.onTable[i]!.reset();
+      this.offTable[i]!.reset();
+    }
+    this.extendedTableMap.clear();
+    this.extendedTableIndex = 0;
+    this.fillTables();
+    this.fillTablesWithGroupNodes();
+    this.fillTablesWithAls();
+    this.expandTables(this.onTable);
+    this.expandTables(this.offTable);
+    this.checkForcingChains();
+    return this.steps;
+  }
+
+  private checkForcingChains(): void {
+    for (let i = 0; i < this.onTable.length; i++) {
+      this.checkOneChain(this.onTable[i]!);
+      this.checkOneChain(this.offTable[i]!);
+    }
+    for (let i = 0; i < this.onTable.length; i++) {
+      this.checkTwoChains(this.onTable[i]!, this.offTable[i]!);
+    }
+    this.checkAllChainsForHouse(null);
+    this.checkAllChainsForHouse(LINE_TPL);
+    this.checkAllChainsForHouse(COL_TPL);
+    this.checkAllChainsForHouse(BLOCK_TPL);
+  }
+
+  private forcingStep(type: SolutionType): SolutionStep {
+    const s = new SolutionStep(type);
+    this.globalStep = s;
+    return s;
+  }
+
+  private setPremiseResult(entry: TableEntry): void {
+    if (entry.isStrong(0)) {
+      this.globalStep.addCandidateToDelete(entry.getCellIndex(0), entry.getCandidate(0));
+    } else {
+      this.globalStep.addIndex(entry.getCellIndex(0));
+      this.globalStep.addValue(entry.getCandidate(0));
+    }
+  }
+
+  private checkOneChain(entry: TableEntry): void {
+    if (entry.index === 0) return;
+    const cand0 = entry.getCandidate(0);
+    const cell0 = entry.getCellIndex(0);
+    // chain contains the inverse of its own premise -> premise false
+    if (
+      (entry.isStrong(0) && entry.offSets[cand0]!.contains(cell0)) ||
+      (!entry.isStrong(0) && entry.onSets[cand0]!.contains(cell0))
+    ) {
+      this.forcingStep("FORCING_CHAIN_CONTRADICTION");
+      this.setPremiseResult(entry);
+      this.addChain(entry, cell0, cand0, !entry.isStrong(0), false, false);
+      this.replaceOrCopyStep();
+    }
+    // same candidate set in and deleted from one cell
+    for (let i = 1; i <= 9; i++) {
+      const t = entry.onSets[i]!.clone();
+      t.and(entry.offSets[i]!);
+      for (const cell of t.toArray()) {
+        this.forcingStep("FORCING_CHAIN_CONTRADICTION");
+        this.setPremiseResult(entry);
+        this.addChain(entry, cell, i, false, false, false);
+        this.addChain(entry, cell, i, true, false, false);
+        this.replaceOrCopyStep();
+      }
+    }
+    // two different values set in the same cell
+    for (let i = 1; i <= 9; i++) {
+      for (let j = i + 1; j <= 9; j++) {
+        const t = entry.onSets[i]!.clone();
+        t.and(entry.onSets[j]!);
+        for (const cell of t.toArray()) {
+          this.forcingStep("FORCING_CHAIN_CONTRADICTION");
+          this.setPremiseResult(entry);
+          this.addChain(entry, cell, i, true, false, false);
+          this.addChain(entry, cell, j, true, false, false);
+          this.replaceOrCopyStep();
+        }
+      }
+    }
+    this.checkHouseSet(entry, LINE_TPL);
+    this.checkHouseSet(entry, COL_TPL);
+    this.checkHouseSet(entry, BLOCK_TPL);
+    // a cell loses all its candidates
+    const candidates = this.finder.getCandidates();
+    const positions = this.finder.getPositions();
+    const tmp = new CellSet();
+    tmp.setAll();
+    for (let i = 1; i <= 9; i++) {
+      const t1 = entry.offSets[i]!.clone();
+      t1.orNot(candidates[i]!);
+      tmp.and(t1);
+    }
+    for (let i = 1; i <= 9; i++) tmp.andNot(entry.onSets[i]!);
+    const set = new CellSet();
+    for (let i = 1; i <= 9; i++) set.or(positions[i]!);
+    tmp.andNot(set);
+    for (const cell of tmp.toArray()) {
+      this.forcingStep("FORCING_CHAIN_CONTRADICTION");
+      this.setPremiseResult(entry);
+      for (const c of this.finder.board.getAllCandidates(cell)) {
+        this.addChain(entry, cell, c, false, false, false);
+      }
+      this.replaceOrCopyStep();
+    }
+    this.checkHouseDel(entry, LINE_TPL);
+    this.checkHouseDel(entry, COL_TPL);
+    this.checkHouseDel(entry, BLOCK_TPL);
+  }
+
+  private checkHouseSet(entry: TableEntry, houseSets: readonly CellSet[]): void {
+    for (let i = 1; i <= 9; i++) {
+      for (const house of houseSets) {
+        const t = house.clone();
+        t.and(entry.onSets[i]!);
+        if (t.size() > 1) {
+          this.forcingStep("FORCING_CHAIN_CONTRADICTION");
+          this.setPremiseResult(entry);
+          for (const cell of t.toArray()) this.addChain(entry, cell, i, true, false, false);
+          this.replaceOrCopyStep();
+        }
+      }
+    }
+  }
+
+  private checkHouseDel(entry: TableEntry, houseSets: readonly CellSet[]): void {
+    const allowed = this.finder.getCandidatesAllowed();
+    for (let i = 1; i <= 9; i++) {
+      for (const house of houseSets) {
+        const t = house.clone();
+        t.and(allowed[i]!);
+        if (!t.isEmpty() && t.andEquals(entry.offSets[i]!)) {
+          this.forcingStep("FORCING_CHAIN_CONTRADICTION");
+          this.setPremiseResult(entry);
+          for (const cell of t.toArray()) this.addChain(entry, cell, i, false, false, false);
+          this.replaceOrCopyStep();
+        }
+      }
+    }
+  }
+
+  private checkTwoChains(on: TableEntry, off: TableEntry): void {
+    if (on.index === 0 || off.index === 0) return;
+    const start = on.getCellIndex(0);
+    for (let i = 1; i <= 9; i++) {
+      const t = on.onSets[i]!.clone();
+      t.and(off.onSets[i]!);
+      t.remove(start);
+      for (const cell of t.toArray()) {
+        this.forcingStep("FORCING_CHAIN_VERITY");
+        this.globalStep.addIndex(cell);
+        this.globalStep.addValue(i);
+        this.addChain(on, cell, i, true, false, false);
+        this.addChain(off, cell, i, true, false, false);
+        this.replaceOrCopyStep();
+      }
+    }
+    for (let i = 1; i <= 9; i++) {
+      const t = on.offSets[i]!.clone();
+      t.and(off.offSets[i]!);
+      t.remove(start);
+      for (const cell of t.toArray()) {
+        this.forcingStep("FORCING_CHAIN_VERITY");
+        this.globalStep.addCandidateToDelete(cell, i);
+        this.addChain(on, cell, i, false, false, false);
+        this.addChain(off, cell, i, false, false, false);
+        this.replaceOrCopyStep();
+      }
+    }
+  }
+
+  private checkAllChainsForHouse(houseSets: readonly CellSet[] | null): void {
+    const candidates = this.finder.getCandidates();
+    if (houseSets === null) {
+      for (let i = 0; i < LENGTH; i++) {
+        if (this.finder.board.values[i] !== 0) continue;
+        const list: TableEntry[] = [];
+        for (const c of this.finder.board.getAllCandidates(i)) list.push(this.onTable[i * 10 + c]!);
+        this.checkEntryList(list);
+      }
+    } else {
+      for (const house of houseSets) {
+        for (let j = 1; j <= 9; j++) {
+          const t = house.clone();
+          t.and(candidates[j]!);
+          if (t.isEmpty()) continue;
+          const list: TableEntry[] = [];
+          for (const cell of t.toArray()) list.push(this.onTable[cell * 10 + j]!);
+          this.checkEntryList(list);
+        }
+      }
+    }
+  }
+
+  private checkEntryList(list: TableEntry[]): void {
+    if (list.length === 0) return;
+    for (let i = 0; i < list.length; i++) {
+      const entry = list[i]!;
+      for (let j = 1; j <= 9; j++) {
+        if (i === 0) {
+          this.tmpOnSets[j]!.set(entry.onSets[j]!);
+          this.tmpOffSets[j]!.set(entry.offSets[j]!);
+        } else {
+          this.tmpOnSets[j]!.and(entry.onSets[j]!);
+          this.tmpOffSets[j]!.and(entry.offSets[j]!);
+        }
+      }
+    }
+    for (let j = 1; j <= 9; j++) {
+      for (const cell of this.tmpOnSets[j]!.toArray()) {
+        this.forcingStep("FORCING_CHAIN_VERITY");
+        this.globalStep.addIndex(cell);
+        this.globalStep.addValue(j);
+        for (const e of list) this.addChain(e, cell, j, true, false, false);
+        this.replaceOrCopyStep();
+      }
+      for (const cell of this.tmpOffSets[j]!.toArray()) {
+        this.forcingStep("FORCING_CHAIN_VERITY");
+        this.globalStep.addCandidateToDelete(cell, j);
+        for (const e of list) this.addChain(e, cell, j, false, false, false);
+        this.replaceOrCopyStep();
+      }
+    }
+  }
+
+  private replaceOrCopyStep(): void {
+    const step = this.globalStep;
+    if (step.chains.length === 0) return;
+    // HoDoKu dedups by getCandidateString(false), which embeds the step name,
+    // so contradiction and verity for the same outcome are kept separately.
+    const key =
+      step.type +
+      (step.candidatesToDelete.length > 0
+        ? "|d:" + step.candidatesToDelete.map((c) => `${c.value}@${c.index}`).sort().join(",")
+        : "|s:" + step.indices.map((idx, k) => `${step.values[k]}@${idx}`).sort().join(","));
+    const len = step.chains.reduce((a, c) => a + (c.end - c.start + 1), 0);
+    const old = this.deletesMap.get(key);
+    if (old !== undefined) {
+      const oldStep = this.steps[old]!;
+      const oldLen = oldStep.chains.reduce((a, c) => a + (c.end - c.start + 1), 0);
+      if (oldLen > len) this.steps[old] = step.clone();
+      return;
+    }
+    this.deletesMap.set(key, this.steps.length);
+    this.steps.push(step.clone());
   }
 
   private getNextExtendedTableEntry(index: number): TableEntry {

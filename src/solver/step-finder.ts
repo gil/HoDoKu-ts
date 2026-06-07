@@ -87,10 +87,15 @@ const GROUPED_NICE_LOOP_EXACT = new Set<SolutionType>([
   "GROUPED_AIC",
 ]);
 
-// Forcing chains/nets use the sound medusa engine (best-effort).
-const TABLING_TYPES = new Set<SolutionType>([
+// Forcing CHAINS use the faithful Trebor-tables engine (contradiction + verity).
+const FORCING_CHAIN_EXACT = new Set<SolutionType>([
   "FORCING_CHAIN",
   "FORCING_CHAIN_CONTRADICTION",
+  "FORCING_CHAIN_VERITY",
+]);
+
+// Forcing NETS still use the sound medusa engine (faithful net tables TODO).
+const TABLING_TYPES = new Set<SolutionType>([
   "FORCING_NET",
   "FORCING_NET_CONTRADICTION",
   "FORCING_NET_VERITY",
@@ -155,6 +160,16 @@ export class StepFinder {
     return s;
   }
 
+  /** Per-digit sets of cells already SET to that digit (solved placements). */
+  getPositions(): CellSet[] {
+    const pos: CellSet[] = Array.from({ length: 10 }, () => new CellSet());
+    for (let i = 0; i < LENGTH; i++) {
+      const v = this.board.values[i]!;
+      if (v !== 0) pos[v]!.add(i);
+    }
+    return pos;
+  }
+
   /** Per-digit sets of cells where the digit is a valid placement (even if not pencilled). */
   getCandidatesAllowed(): CellSet[] {
     if (this.allowedDirty) {
@@ -187,6 +202,10 @@ export class StepFinder {
     if (type === "TEMPLATE_SET" || type === "TEMPLATE_DEL") return this.template.getStep(this, type);
     if (NICE_LOOP_EXACT.has(type)) return this.tablingChains.getStep(this, type);
     if (GROUPED_NICE_LOOP_EXACT.has(type)) return this.tablingChains.getStep(this, type);
+    if (FORCING_CHAIN_EXACT.has(type)) {
+      const all = this.tablingChains.getForcingChains(this);
+      return all.find((s) => s.type === type) ?? all[0] ?? null;
+    }
     if (TABLING_TYPES.has(type)) return this.tabling.getStep(this, type);
     if (type === "BRUTE_FORCE") return this.getBruteForce();
     if (type === "GIVE_UP") return getGiveUpStep();
@@ -207,6 +226,9 @@ export class StepFinder {
     if (type === "TEMPLATE_SET" || type === "TEMPLATE_DEL") return this.template.findAll(this, type);
     if (NICE_LOOP_EXACT.has(type)) return this.tablingChains.findAll(this, type);
     if (GROUPED_NICE_LOOP_EXACT.has(type)) return this.tablingChains.findAll(this, type);
+    if (FORCING_CHAIN_EXACT.has(type)) {
+      return this.tablingChains.getForcingChains(this).filter((s) => s.type === type);
+    }
     if (TABLING_TYPES.has(type)) return this.tabling.findAll(this, type);
     return [];
   }
