@@ -65,4 +65,13 @@ describe("generator", () => {
     expect(p!.difficulty).toBe("hard");
     expect(countSolutions(Board.fromValues(p!.givens), 2)).toBe(1);
   });
+
+  it("generates unfair and extreme puzzles with unique solutions", () => {
+    for (const d of ["unfair", "extreme"] as const) {
+      const p = generateByDifficulty(d, { maxTries: 30000 });
+      expect(p, `no ${d} puzzle found`).not.toBeNull();
+      expect(p!.difficulty).toBe(d);
+      expect(countSolutions(Board.fromValues(p!.givens), 2)).toBe(1);
+    }
+  });
 });

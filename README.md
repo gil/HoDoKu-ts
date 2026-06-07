@@ -12,14 +12,17 @@ Provides:
 
 Zero runtime dependencies. Ships ESM + CJS + type declarations.
 
-> Port status: the engine, generator and the full Easy/Medium/Hard technique set
-> are complete and validated against HoDoKu's regression library (`reglib`) —
-> singles, subsets, intersections, wings, basic fish, coloring, the complete
-> uniqueness family (UR 1-6, Hidden/Avoidable Rectangle, BUG+1), and chains
-> (X/XY-Chain, Turbot, Remote Pair). Easy/Medium/Hard generation and rating are
-> exact. Still in progress: Nice Loops/AIC + Forcing Chains/Nets (tabling), ALS,
-> Templates, finned/franken/mutant/kraken fish, and Empty Rectangle completion;
-> until those land, UNFAIR/EXTREME puzzles needing them rate harder than HoDoKu.
+> Port status: all five difficulty levels generate. The full Easy/Medium/Hard
+> technique set is complete and validated against HoDoKu's regression library
+> (`reglib`) — singles, subsets, intersections, wings, basic fish, coloring, the
+> complete uniqueness family (UR 1-6, Hidden/Avoidable Rectangle, BUG+1), chains
+> (X/XY-Chain, Turbot, Remote Pair), plus Sue de Coq, ALS-XZ and Templates. A
+> global soundness harness proves no technique ever makes an invalid elimination.
+> Easy/Medium/Hard rating is exact. UNFAIR/EXTREME use additionally a medusa-style
+> tabling (Nice-Loop/AIC/forcing, sound) and best-effort ALS-XY-Wing; their
+> ratings are close but not yet byte-exact. Still in progress: exact tabling chain
+> reconstruction, full Fish (finned/franken/mutant/kraken), ALS-XY-Chain / Death
+> Blossom, Empty Rectangle completion.
 
 ## Install
 
