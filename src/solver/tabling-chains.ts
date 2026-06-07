@@ -190,6 +190,57 @@ export class TablingChainsSolver {
     return this.steps;
   }
 
+  /** Fills + expands the tables for a Kraken Fish search (chainsOnly). */
+  initForKrakenSearch(finder: CandidateFinder, withAls: boolean): void {
+    this.finder = finder;
+    this.withGroupNodes = true;
+    this.withAlsNodes = withAls;
+    this.onlyGroupedNiceLoops = false;
+    this.steps = [];
+    this.deletesMap.clear();
+    for (let i = 0; i < this.onTable.length; i++) {
+      this.onTable[i]!.reset();
+      this.offTable[i]!.reset();
+    }
+    this.extendedTableMap.clear();
+    this.extendedTableIndex = 0;
+    this.fillTables();
+    this.fillTablesWithGroupNodes();
+    if (withAls) this.fillTablesWithAls();
+    this.expandTables(this.onTable);
+    this.expandTables(this.offTable);
+  }
+
+  /** KF Type 1: a weak-weak chain from every fin reaches `cand` OFF in `index`. */
+  checkKrakenTypeOne(fins: number[], index: number, cand: number): boolean {
+    for (const fin of fins) {
+      if (!this.onTable[fin * 10 + cand]!.offSets[cand]!.contains(index)) return false;
+    }
+    return true;
+  }
+
+  /** KF Type 2: chains from all `indices` (fish cand ON) reach a common `endCand` OFF. */
+  checkKrakenTypeTwo(indices: number[], startCand: number, endCand: number): CellSet {
+    const candidates = this.finder.getCandidates();
+    const result = candidates[endCand]!.clone();
+    for (const idx of indices) result.remove(idx);
+    for (const idx of indices) result.and(this.onTable[idx * 10 + startCand]!.offSets[endCand]!);
+    return result;
+  }
+
+  /** Reconstructs the Kraken chain from (startIndex,startCand) ON to (endIndex,endCand) OFF. */
+  getKrakenChain(startIndex: number, startCand: number, endIndex: number, endCand: number): Chain | null {
+    this.globalStep = new SolutionStep("KRAKEN_FISH");
+    const ok = this.addChain(this.onTable[startIndex * 10 + startCand]!, endIndex, endCand, false, false, false);
+    if (!ok || this.globalStep.chains.length === 0) return null;
+    return this.globalStep.chains[0]!;
+  }
+
+  /** Exposes the ALS list for chain ALS-node display adjustment. */
+  getAlses(): Als[] {
+    return this.alses;
+  }
+
   private checkForcingChains(): void {
     for (let i = 0; i < this.onTable.length; i++) {
       this.checkOneChain(this.onTable[i]!);

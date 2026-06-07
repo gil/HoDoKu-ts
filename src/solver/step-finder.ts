@@ -193,6 +193,10 @@ export class StepFinder {
     if (SIMPLE_TYPES.has(type)) return this.simple.getStep(this.board, type);
     if (WING_TYPES.has(type)) return this.wing.getStep(this, type);
     if (SDP_TYPES.has(type)) return this.sdp.getStep(this, type);
+    if (type === "KRAKEN_FISH" || type === "KRAKEN_FISH_TYPE_1" || type === "KRAKEN_FISH_TYPE_2") {
+      const all = this.fish.getKrakenFishes(this);
+      return all.find((s) => s.type === type) ?? all[0] ?? null;
+    }
     if (isFish(type)) return this.fish.getStep(this, type);
     if (COLORING_TYPES.has(type)) return this.coloring.getStep(this, type);
     if (UNIQUENESS_TYPES.has(type)) return this.uniqueness.getStep(this, type);
@@ -217,6 +221,9 @@ export class StepFinder {
     if (SIMPLE_TYPES.has(type)) return this.simple.findAll(this.board, type);
     if (WING_TYPES.has(type)) return this.wing.findAll(this, type);
     if (SDP_TYPES.has(type)) return this.sdp.findAll(this, type);
+    if (type === "KRAKEN_FISH" || type === "KRAKEN_FISH_TYPE_1" || type === "KRAKEN_FISH_TYPE_2") {
+      return this.fish.getKrakenFishes(this).filter((s) => s.type === type);
+    }
     if (isFish(type)) return this.fish.findAll(this, type);
     if (COLORING_TYPES.has(type)) return this.coloring.findAll(this, type);
     if (UNIQUENESS_TYPES.has(type)) return this.uniqueness.findAll(this, type);

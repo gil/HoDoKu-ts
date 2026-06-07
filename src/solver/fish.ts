@@ -15,6 +15,7 @@ import { SolutionStep } from "../core/solution-step.js";
 import type { SolutionType } from "../core/solution-type.js";
 import { getFishSize, isSashimiFish } from "../core/solution-type.js";
 import { categoryOf, isFrankenFish, isMutantFish } from "../config/defaults.js";
+import { TablingChainsSolver } from "./tabling-chains.js";
 import { BLOCK, COL, LINE, UNIT_TEMPLATES, getCommonBuddies } from "../core/tables.js";
 import type { CandidateFinder } from "./wing.js";
 
@@ -81,6 +82,10 @@ export class FishSolver {
   private baseLevel = 0;
   private coverLevel = 0;
   private out: SolutionStep[] = [];
+  private kraken = false;
+  private maxFins = MAX_FINS;
+  private krakenSolver = new TablingChainsSolver();
+  private krakenDedup = new Map<string, number>();
 
   constructor() {
     for (let i = 0; i < 10; i++) {
@@ -277,16 +282,21 @@ export class FishSolver {
           if (!tmp.isEmpty() || !cEntry.cannib.isEmpty()) {
             this.createStep(baseSet, fins, endoFin, tmp, cEntry.cannib);
           }
-        } else if (this.withFins && finSize > 0 && finSize <= MAX_FINS) {
+        } else if (this.withFins && finSize > 0 && finSize <= this.maxFins) {
           const finBuddies = getCommonBuddies(fins); // cells seeing every fin
           if (!finBuddies.isEmpty()) {
             tmp.set(cEntry.cand);
             tmp.andNot(baseSet);
+            const coverNotBase = tmp.clone();
             tmp.and(finBuddies);
             const cannib = cEntry.cannib.clone();
             cannib.and(finBuddies);
-            if (!tmp.isEmpty() || !cannib.isEmpty()) {
+            if (!this.kraken && (!tmp.isEmpty() || !cannib.isEmpty())) {
               this.createStep(baseSet, fins, endoFin, tmp, cannib);
+            } else if (this.kraken && tmp.isEmpty() && cannib.isEmpty()) {
+              const del = coverNotBase.clone();
+              del.or(cEntry.cannib);
+              this.searchForKraken(del, fins, baseSet, cEntry.cannib);
             }
           }
         }
@@ -362,6 +372,98 @@ export class FishSolver {
     finCells.andNot(endoFin);
     for (const idx of finCells) step.addFin(idx, this.candidate);
     for (const idx of endoFin) step.addEndoFin(idx, this.candidate);
+    this.out.push(step);
+  }
+
+  /** All Kraken Fishes (Type 1 + 2): basic+franken, size 2-4, ≤2 fins (all-steps). */
+  getKrakenFishes(finder: CandidateFinder): SolutionStep[] {
+    this.krakenSolver.initForKrakenSearch(finder, true);
+    this.kraken = true;
+    this.maxFins = 2;
+    this.out = [];
+    this.krakenDedup.clear();
+    for (const ft of [BASIC, FRANKEN]) {
+      for (let size = 2; size <= 4; size++) {
+        for (let cand = 1; cand <= 9; cand++) {
+          this.candidate = cand;
+          this.candidatesSet = finder.getCandidates()[cand]!;
+          this.fishType = ft;
+          this.withoutFins = false;
+          this.withFins = true;
+          this.sashimi = false;
+          this.withEndoFins = ft !== BASIC;
+          this.minSize = size;
+          this.maxSize = size;
+          this.searchFishes(true);
+          if (ft !== BASIC) this.searchFishes(false);
+        }
+      }
+    }
+    this.kraken = false;
+    this.maxFins = MAX_FINS;
+    return this.out;
+  }
+
+  /**
+   * For a finned fish with no direct elimination, look for Kraken Fishes:
+   * Type 1 — a chain from every fin reaches a common candidate (delete it);
+   * Type 2 — chains from all cover-base cells + fins reach a common candidate.
+   */
+  private searchForKraken(deleteSet: CellSet, fins: CellSet, baseSet: CellSet, cannib: CellSet): void {
+    const finArr = fins.toArray();
+    // Type 1
+    for (const endIndex of deleteSet.toArray()) {
+      if (this.krakenSolver.checkKrakenTypeOne(finArr, endIndex, this.candidate)) {
+        this.addKraken("KRAKEN_FISH_TYPE_1", endIndex, this.candidate, fins, finArr, this.candidate);
+      }
+    }
+    // Type 2
+    for (let i = 0; i < this.numCover; i++) {
+      const unit = this.coverUnits[i]!;
+      if (!this.coverUsed[unit]) continue;
+      const coverCand = this.coverCands[i]!;
+      const baseInCover = coverCand.clone();
+      baseInCover.and(baseSet);
+      baseInCover.andNot(cannib);
+      // (cover ⊆ base => normal forcing chain, skip)
+      if (baseInCover.equals(coverCand)) continue;
+      const starts = baseInCover.clone();
+      starts.or(fins);
+      const startArr = starts.toArray();
+      for (let endCand = 1; endCand <= 9; endCand++) {
+        const result = this.krakenSolver.checkKrakenTypeTwo(startArr, this.candidate, endCand);
+        for (const endIndex of result.toArray()) {
+          this.addKraken("KRAKEN_FISH_TYPE_2", endIndex, endCand, fins, startArr, this.candidate);
+        }
+      }
+    }
+  }
+
+  private addKraken(
+    type: SolutionType,
+    endIndex: number,
+    endCand: number,
+    fins: CellSet,
+    starts: number[],
+    fishCand: number,
+  ): void {
+    const elimKey = `${type}|${endCand}@${endIndex}|${fishCand}`;
+    if (this.krakenDedup.has(elimKey)) return;
+    const step = new SolutionStep(type);
+    step.addValue(fishCand);
+    step.addCandidateToDelete(endIndex, endCand);
+    for (let i = 0; i < 27; i++) {
+      if (this.baseUsed[i]) step.addBaseEntity(constraintType(i), (i % 9) + 1);
+    }
+    for (let i = 0; i < 27; i++) {
+      if (this.coverUsed[i]) step.addCoverEntity(constraintType(i), (i % 9) + 1);
+    }
+    for (const idx of fins) step.addFin(idx, fishCand);
+    for (const startIndex of starts) {
+      const chain = this.krakenSolver.getKrakenChain(startIndex, fishCand, endIndex, endCand);
+      if (chain) step.addChain(chain.clone());
+    }
+    this.krakenDedup.set(elimKey, this.out.length);
     this.out.push(step);
   }
 
