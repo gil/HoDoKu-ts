@@ -555,8 +555,8 @@ export class TablingChainsSolver {
         // weak link between cells
         if (i > 0 && !isSStrong(nlChain[i]!) && getSCellIndex(nlChain[i - 1]!) !== getSCellIndex(nlChain[i]!)) {
           const actCand = getSCandidate(nlChain[i]!);
-          const tmp = nodeBuddies(nlChain[i - 1]!, this.alses);
-          tmp.and(nodeBuddies(nlChain[i]!, this.alses));
+          const tmp = nodeBuddies(nlChain[i - 1]!, actCand, this.alses);
+          tmp.and(nodeBuddies(nlChain[i]!, actCand, this.alses));
           tmp.andNot(this.chainSet);
           tmp.remove(startIndex);
           tmp.and(candidates[actCand]!);
@@ -677,6 +677,7 @@ export class TablingChainsSolver {
     this.lassoSet.clear();
     if (isNiceLoop && getSCellIndex(this.chain[0]!) === getSCellIndex(this.chain[1]!)) return false;
     let lastCellIndex = -1;
+    let lastCellEntry = -1;
     const firstCellIndex = getSCellIndex(this.chain[this.chainIndex - 1]!);
     let j = 0;
     for (let i = this.chainIndex - 1; i >= 0; i--) {
@@ -686,9 +687,20 @@ export class TablingChainsSolver {
         if (this.lassoSet.contains(newCellIndex)) return false;
         if (lastCellIndex !== -1 && (lastCellIndex !== firstCellIndex || isAic)) {
           this.lassoSet.add(lastCellIndex);
+          // group/ALS nodes occupy several cells; a nice loop may not cross any of them
+          const lt = getSNodeType(lastCellEntry);
+          if (lt === GROUP_NODE) {
+            const c2 = getSCellIndex2(lastCellEntry);
+            if (c2 !== -1) this.lassoSet.add(c2);
+            const c3 = getSCellIndex3(lastCellEntry);
+            if (c3 !== -1) this.lassoSet.add(c3);
+          } else if (lt === ALS_NODE) {
+            this.lassoSet.or(this.alses[getSAlsIndex(lastCellEntry)]!.indices);
+          }
         }
       }
       lastCellIndex = newCellIndex;
+      lastCellEntry = oldEntry;
       this.tmpChain[j++] = oldEntry;
     }
     if (j > 0) {
@@ -753,8 +765,12 @@ export class TablingChainsSolver {
   }
 }
 
-/** Node-aware buddies: group node = cells seeing all its cells; ALS = buddiesPerCandidat. */
-function nodeBuddies(entry: number, alses: Als[]): CellSet {
+/**
+ * Node-aware buddies for the given link candidate (HoDoKu Chain.getSNodeBuddies):
+ * group node = cells seeing all its cells; ALS = buddiesPerCandidat[candidate].
+ * The candidate is the link candidate, NOT the node's stored entry candidate.
+ */
+function nodeBuddies(entry: number, candidate: number, alses: Als[]): CellSet {
   const nodeType = getSNodeType(entry);
   if (nodeType === GROUP_NODE) {
     const set = BUDDIES[getSCellIndex(entry)]!.clone();
@@ -764,7 +780,7 @@ function nodeBuddies(entry: number, alses: Als[]): CellSet {
     return set;
   }
   if (nodeType === ALS_NODE) {
-    return alses[getSAlsIndex(entry)]!.buddiesPerCandidat[getSCandidate(entry)]!.clone();
+    return alses[getSAlsIndex(entry)]!.buddiesPerCandidat[candidate]!.clone();
   }
   return BUDDIES[getSCellIndex(entry)]!.clone();
 }
