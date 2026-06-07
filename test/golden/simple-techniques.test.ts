@@ -44,6 +44,7 @@ const IMPLEMENTED = new Set([
   "0706", // Continuous Nice Loop
   "0707", // Discontinuous Nice Loop
   "0708", // AIC
+  "0711", // Grouped AIC (group + ALS nodes)
   "1101", // Sue de Coq
   "1201", // Template Set
   "1202", // Template Delete

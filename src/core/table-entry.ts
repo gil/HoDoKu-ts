@@ -7,6 +7,7 @@
  */
 
 import {
+  ALS_NODE,
   getSCandidate,
   getSCellIndex,
   getSNodeType,
@@ -138,6 +139,11 @@ export class TableEntry {
     ret.distance += penalty;
     this.indices.set(entry, this.index);
     this.index++;
+  }
+
+  /** Adds an ALS node: alsIndex is split into the two 7-bit cellIndex2/3 fields. */
+  addAlsEntry(cellIndex: number, alsIndex: number, cand: number, set: boolean, penalty: number): void {
+    this.add(cellIndex, alsIndex & 0x7f, (alsIndex >> 7) & 0x7f, ALS_NODE, cand, set, 0, 0, 0, 0, 0, penalty);
   }
 
   getEntry(index: number): number {

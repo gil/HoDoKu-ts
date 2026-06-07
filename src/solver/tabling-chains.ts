@@ -10,19 +10,25 @@
  * Grouped variants (group/ALS nodes) and forcing nets are handled elsewhere.
  */
 
+import { ANZ_VALUES } from "../core/candidates.js";
 import { CellSet } from "../core/cell-set.js";
 import {
+  ALS_NODE,
   Chain,
   GROUP_NODE,
+  getSAlsIndex,
   getSCandidate,
   getSCellIndex,
   getSCellIndex2,
   getSCellIndex3,
   getSNodeType,
   isSStrong,
+  makeAlsEntry,
+  makeSEntry,
   makeSimpleEntry,
   NORMAL_NODE,
 } from "../core/chain.js";
+import { Als, enumerateAlses } from "./als.js";
 import { SolutionStep } from "../core/solution-step.js";
 import type { SolutionType } from "../core/solution-type.js";
 import { TableEntry } from "../core/table-entry.js";
@@ -102,11 +108,13 @@ export class TablingChainsSolver {
   private finder!: CandidateFinder;
   private globalStep = new SolutionStep("AIC");
   private withGroupNodes = false;
+  private withAlsNodes = false;
   private onlyGroupedNiceLoops = false;
   private extendedTable: TableEntry[] = [];
   private extendedTableMap = new Map<number, number>();
   private extendedTableIndex = 0;
   private groupNodes: GroupNode[] = [];
+  private alses: Als[] = [];
 
   constructor() {
     for (let i = 0; i < LENGTH * 10; i++) {
@@ -117,22 +125,26 @@ export class TablingChainsSolver {
 
   getStep(finder: CandidateFinder, type: SolutionType): SolutionStep | null {
     const grouped = isGrouped(type);
-    const all = this.getNiceLoops(finder, grouped, grouped);
+    const all = this.getNiceLoops(finder, grouped, grouped, grouped);
     return all.find((s) => stepClass(s.type) === stepClass(type)) ?? all[0] ?? null;
   }
 
   findAll(finder: CandidateFinder, type?: SolutionType): SolutionStep[] {
     const grouped = type ? isGrouped(type) : false;
-    return this.getNiceLoops(finder, grouped, grouped);
+    // The regression library is generated in all-steps mode, which enables
+    // ALS nodes inside tabling chains (ALL_STEPS_ALLOW_ALS_IN_TABLING_CHAINS).
+    return this.getNiceLoops(finder, grouped, grouped, grouped);
   }
 
   private getNiceLoops(
     finder: CandidateFinder,
     withGroupNodes: boolean,
+    withAlsNodes: boolean,
     onlyGrouped: boolean,
   ): SolutionStep[] {
     this.finder = finder;
     this.withGroupNodes = withGroupNodes;
+    this.withAlsNodes = withAlsNodes;
     this.onlyGroupedNiceLoops = onlyGrouped;
     this.steps = [];
     this.deletesMap.clear();
@@ -144,6 +156,7 @@ export class TablingChainsSolver {
     this.extendedTableIndex = 0;
     this.fillTables();
     if (this.withGroupNodes) this.fillTablesWithGroupNodes();
+    if (this.withAlsNodes) this.fillTablesWithAls();
     this.expandTables(this.onTable);
     this.expandTables(this.offTable);
     this.checkNiceLoops(this.onTable);
@@ -274,6 +287,116 @@ export class TablingChainsSolver {
           const arr = tmp.toArray();
           for (const k of arr) on.addSimple(k, cand, false);
           if (anz === 2) off.addSimple(arr[0]!, cand, true);
+        }
+      }
+    }
+  }
+
+  private getAlsTableEntry(entryCellIndex: number, alsIndex: number, cand: number): TableEntry | null {
+    const entry = makeAlsEntry(entryCellIndex, alsIndex, cand, false, ALS_NODE);
+    const idx = this.extendedTableMap.get(entry);
+    return idx === undefined ? null : this.extendedTable[idx]!;
+  }
+
+  private fillTablesWithAls(): void {
+    const sudoku = this.finder.board;
+    const candidates = this.finder.getCandidates();
+    this.alses = enumerateAlses(this.finder).filter((a) => a.indices.size() > 1);
+    const alses = this.alses;
+    const alsElim: CellSet[] = Array.from({ length: 10 }, () => new CellSet());
+    for (let i = 0; i < alses.length; i++) {
+      const als = alses[i]!;
+      const penalty = chainPenalty(ANZ_VALUES[als.candidates]!);
+      for (let j = 1; j <= 9; j++) {
+        const ipc = als.indicesPerCandidat[j];
+        if (!ipc || ipc.isEmpty()) continue;
+        // possible eliminations for this entry candidate
+        let elimPresent = false;
+        for (let k = 1; k <= 9; k++) {
+          alsElim[k]!.clear();
+          if (k === j) continue;
+          if (als.indicesPerCandidat[k]) {
+            alsElim[k]!.set(candidates[k]!);
+            alsElim[k]!.and(als.buddiesPerCandidat[k]!);
+            if (!alsElim[k]!.isEmpty()) elimPresent = true;
+          }
+        }
+        if (!elimPresent) continue;
+        const entryIndex = ipc.toArray()[0]!;
+        let offEntry = this.getAlsTableEntry(entryIndex, i, j);
+        if (offEntry === null) {
+          offEntry = this.getNextExtendedTableEntry(this.extendedTableIndex);
+          offEntry.addAlsEntry(entryIndex, i, j, false, 0);
+          this.extendedTableMap.set(offEntry.entries[0]!, this.extendedTableIndex);
+          this.extendedTableIndex++;
+        }
+        // put the ALS into the onTables of all entry candidates
+        const entrySet = candidates[j]!.clone();
+        entrySet.and(als.buddiesPerCandidat[j]!);
+        const alsEntryVal = makeAlsEntry(entryIndex, i, j, false, ALS_NODE);
+        for (const actIndex of entrySet.toArray()) {
+          this.onTable[actIndex * 10 + j]!.addAlsEntry(entryIndex, i, j, false, 0);
+          // group nodes that can serve as an entry into the ALS
+          for (const gAct of this.groupNodes) {
+            if (gAct.cand !== j || !gAct.indices.contains(actIndex)) continue;
+            const ov = als.indices.clone();
+            if (!ov.andEmpty(gAct.indices)) continue;
+            const vis = ipc.clone();
+            if (!vis.andEquals(gAct.buddies)) continue;
+            const gEntry = makeSEntry(gAct.index1, gAct.index2, gAct.index3, j, true, GROUP_NODE);
+            const gIdx = this.extendedTableMap.get(gEntry);
+            if (gIdx === undefined) continue;
+            const gTmp = this.extendedTable[gIdx]!;
+            if (gTmp.indices.has(alsEntryVal)) continue;
+            gTmp.addAlsEntry(entryIndex, i, j, false, 0);
+          }
+        }
+        // eliminations: single candidates and group nodes
+        for (let k = 1; k <= 9; k++) {
+          if (alsElim[k]!.isEmpty()) continue;
+          for (const l of alsElim[k]!.toArray()) {
+            offEntry.add(l, -1, -1, NORMAL_NODE, k, false, 0, 0, 0, 0, 0, penalty);
+          }
+          for (const gAct of this.groupNodes) {
+            if (gAct.cand !== k) continue;
+            const gIdxSet = gAct.indices.clone();
+            if (!gIdxSet.andEquals(alsElim[k]!)) continue;
+            offEntry.add(gAct.index1, gAct.index2, gAct.index3, GROUP_NODE, k, false, 0, 0, 0, 0, 0, penalty);
+          }
+        }
+        // ALS triggers another ALS when its eliminations cover a whole candidate of it
+        for (let k = 0; k < alses.length; k++) {
+          if (k === i) continue;
+          const tmpAls = alses[k]!;
+          const ovv = als.indices.clone();
+          if (!ovv.andEmpty(tmpAls.indices)) continue;
+          for (let l = 1; l <= 9; l++) {
+            const tip = tmpAls.indicesPerCandidat[l];
+            if (alsElim[l]!.isEmpty() || !tip || tip.isEmpty()) continue;
+            if (!tip.andEquals(alsElim[l]!)) continue; // tip subset of elim
+            const tmpAlsIndex = tip.toArray()[0]!;
+            if (this.getAlsTableEntry(tmpAlsIndex, k, l) === null) {
+              const tmpAlsEntry = this.getNextExtendedTableEntry(this.extendedTableIndex);
+              tmpAlsEntry.addAlsEntry(tmpAlsIndex, k, l, false, 0);
+              this.extendedTableMap.set(tmpAlsEntry.entries[0]!, this.extendedTableIndex);
+              this.extendedTableIndex++;
+            }
+            offEntry.addAlsEntry(tmpAlsIndex, k, l, false, penalty);
+          }
+        }
+        // forcings: an ALS buddy left with a single candidate is forced
+        for (const cellIndex of als.buddies.toArray()) {
+          if (sudoku.values[cellIndex] !== 0 || sudoku.getAnzCandidates(cellIndex) === 2) continue;
+          let count = 0;
+          let forced = 0;
+          for (const c of sudoku.getAllCandidates(cellIndex)) {
+            if (alsElim[c]!.contains(cellIndex)) continue;
+            count++;
+            forced = c;
+          }
+          if (count === 1) {
+            offEntry.add(cellIndex, -1, -1, NORMAL_NODE, forced, true, 0, 0, 0, 0, 0, penalty + 1);
+          }
         }
       }
     }
@@ -432,12 +555,42 @@ export class TablingChainsSolver {
         // weak link between cells
         if (i > 0 && !isSStrong(nlChain[i]!) && getSCellIndex(nlChain[i - 1]!) !== getSCellIndex(nlChain[i]!)) {
           const actCand = getSCandidate(nlChain[i]!);
-          const tmp = nodeBuddies(nlChain[i - 1]!);
-          tmp.and(nodeBuddies(nlChain[i]!));
+          const tmp = nodeBuddies(nlChain[i - 1]!, this.alses);
+          tmp.and(nodeBuddies(nlChain[i]!, this.alses));
           tmp.andNot(this.chainSet);
           tmp.remove(startIndex);
           tmp.and(candidates[actCand]!);
           for (const idx of tmp) this.globalStep.addCandidateToDelete(idx, actCand);
+
+          // ALS node: candidates that are not entry/exit can eliminate; forced exits too
+          if (getSNodeType(nlChain[i]!) === ALS_NODE) {
+            const isForceExit = i < nlChainIndex && isSStrong(nlChain[i + 1]!);
+            const nextCellIndex = getSCellIndex(nlChain[i + 1]!);
+            const exitCands = new Set<number>();
+            if (isForceExit) {
+              const forceCand = getSCandidate(nlChain[i + 1]!);
+              for (const c of sudoku.getAllCandidates(nextCellIndex)) if (c !== forceCand) exitCands.add(c);
+            } else if (i < nlChainIndex) {
+              exitCands.add(getSCandidate(nlChain[i + 1]!));
+            }
+            const als = this.alses[getSAlsIndex(nlChain[i]!)]!;
+            for (let jj = 1; jj <= 9; jj++) {
+              if (jj === actCand || exitCands.has(jj) || !als.buddiesPerCandidat[jj]) continue;
+              const t = als.buddiesPerCandidat[jj]!.clone();
+              t.and(candidates[jj]!);
+              for (const idx of t) this.globalStep.addCandidateToDelete(idx, jj);
+            }
+            if (isForceExit) {
+              const nb = BUDDIES[nextCellIndex]!;
+              for (const ec of exitCands) {
+                if (!als.buddiesPerCandidat[ec]) continue;
+                const t = als.buddiesPerCandidat[ec]!.clone();
+                t.and(nb);
+                t.and(candidates[ec]!);
+                for (const idx of t) this.globalStep.addCandidateToDelete(idx, ec);
+              }
+            }
+          }
         }
       }
     }
@@ -588,24 +741,39 @@ export class TablingChainsSolver {
 
   private addToChainSet(entry: number): void {
     this.chainSet.add(getSCellIndex(entry));
-    if (getSNodeType(entry) === GROUP_NODE) {
+    const nt = getSNodeType(entry);
+    if (nt === GROUP_NODE) {
       const c2 = getSCellIndex2(entry);
       if (c2 !== -1) this.chainSet.add(c2);
       const c3 = getSCellIndex3(entry);
       if (c3 !== -1) this.chainSet.add(c3);
+    } else if (nt === ALS_NODE) {
+      this.chainSet.or(this.alses[getSAlsIndex(entry)]!.indices);
     }
   }
 }
 
-/** Node-aware buddies: a group node's buddies are the cells that see all its cells. */
-function nodeBuddies(entry: number): CellSet {
-  const set = BUDDIES[getSCellIndex(entry)]!.clone();
-  if (getSNodeType(entry) === GROUP_NODE) {
+/** Node-aware buddies: group node = cells seeing all its cells; ALS = buddiesPerCandidat. */
+function nodeBuddies(entry: number, alses: Als[]): CellSet {
+  const nodeType = getSNodeType(entry);
+  if (nodeType === GROUP_NODE) {
+    const set = BUDDIES[getSCellIndex(entry)]!.clone();
     set.and(BUDDIES[getSCellIndex2(entry)]!);
     const c3 = getSCellIndex3(entry);
     if (c3 !== -1) set.and(BUDDIES[c3]!);
+    return set;
   }
-  return set;
+  if (nodeType === ALS_NODE) {
+    return alses[getSAlsIndex(entry)]!.buddiesPerCandidat[getSCandidate(entry)]!.clone();
+  }
+  return BUDDIES[getSCellIndex(entry)]!.clone();
+}
+
+/** ALS chain penalty: prefers chains with fewer/smaller ALS (HoDoKu Als.getChainPenalty). */
+function chainPenalty(candSize: number): number {
+  if (candSize <= 1) return 0;
+  if (candSize === 2) return candSize - 1;
+  return (candSize - 1) * 2;
 }
 
 function isGrouped(type: SolutionType): boolean {
