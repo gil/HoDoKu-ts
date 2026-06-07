@@ -115,7 +115,7 @@ function checkDoublyLinkedAls(
   rc1: number,
   rc2: number,
 ): boolean {
-  let prc = als1.candidates & ~MASKS[rc1]! & ~MASKS[rc2]!;
+  const prc = als1.candidates & ~MASKS[rc1]! & ~MASKS[rc2]!;
   if (prc === 0) return false;
   let isDoubly = false;
   for (const cand of candidatesOf(prc)) {
@@ -185,7 +185,7 @@ export function computeRestrictedCommons(alses: Als[]): RestrictedCommon[] {
       inter.set(als1.indices);
       inter.and(als2.indices);
       if (!inter.isEmpty()) continue; // no overlap allowed
-      let possible = als1.candidates & als2.candidates;
+      const possible = als1.candidates & als2.candidates;
       if (possible === 0) continue;
       let rc: RestrictedCommon | null = null;
       for (const cand of candidatesOf(possible)) {
