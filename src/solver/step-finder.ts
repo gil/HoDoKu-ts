@@ -173,7 +173,7 @@ export class StepFinder {
     if (UNIQUENESS_TYPES.has(type)) return this.uniqueness.getStep(this, type);
     if (CHAIN_TYPES.has(type)) return this.chains.getStep(this, type);
     if (type === "SUE_DE_COQ") return this.misc.getStep(this, type);
-    if (type === "ALS_XZ" || type === "ALS_XY_WING" || type === "ALS_XY_CHAIN") return this.als.getStep(this, type);
+    if (type === "ALS_XZ" || type === "ALS_XY_WING" || type === "ALS_XY_CHAIN" || type === "DEATH_BLOSSOM") return this.als.getStep(this, type);
     if (type === "TEMPLATE_SET" || type === "TEMPLATE_DEL") return this.template.getStep(this, type);
     if (NICE_LOOP_EXACT.has(type)) return this.tablingChains.getStep(this, type);
     if (TABLING_TYPES.has(type)) return this.tabling.getStep(this, type);
@@ -192,7 +192,7 @@ export class StepFinder {
     if (UNIQUENESS_TYPES.has(type)) return this.uniqueness.findAll(this, type);
     if (CHAIN_TYPES.has(type)) return this.chains.findAll(this, type);
     if (type === "SUE_DE_COQ") return this.misc.findAll(this, type);
-    if (type === "ALS_XZ" || type === "ALS_XY_WING" || type === "ALS_XY_CHAIN") return this.als.findAll(this, type);
+    if (type === "ALS_XZ" || type === "ALS_XY_WING" || type === "ALS_XY_CHAIN" || type === "DEATH_BLOSSOM") return this.als.findAll(this, type);
     if (type === "TEMPLATE_SET" || type === "TEMPLATE_DEL") return this.template.findAll(this, type);
     if (NICE_LOOP_EXACT.has(type)) return this.tablingChains.findAll(this);
     if (TABLING_TYPES.has(type)) return this.tabling.findAll(this, type);

@@ -1,7 +1,6 @@
 /*
- * Port of HoDoKu's AlsSolver — currently ALS-XZ (incl. doubly-linked).
- * ALS-XY-Wing / XY-Chain / Death Blossom build on the same ALS + Restricted
- * Common machinery and are deferred to a later pass.
+ * Port of HoDoKu's AlsSolver: ALS-XZ (incl. doubly-linked), ALS-XY-Wing,
+ * ALS-XY-Chain and Death Blossom, over a shared ALS + Restricted Common layer.
  *
  * An Almost Locked Set (ALS) is a set of N cells holding N+1 candidates. A
  * Restricted Common (RC) is a candidate shared by two ALS where every instance
@@ -9,7 +8,7 @@
  * common candidate Z that is seen by all its occurrences in both ALS is removed.
  */
 
-import { ANZ_VALUES, MASKS, candidatesOf } from "../core/candidates.js";
+import { ANZ_VALUES, MASKS, MAX_MASK, candidatesOf } from "../core/candidates.js";
 import { CellSet } from "../core/cell-set.js";
 import { SolutionStep } from "../core/solution-step.js";
 import type { SolutionType } from "../core/solution-type.js";
@@ -104,6 +103,7 @@ export class AlsSolver {
     if (type === "ALS_XZ") return this.alsXZ(finder, true)[0] ?? null;
     if (type === "ALS_XY_WING") return this.alsXYWing(finder, true)[0] ?? null;
     if (type === "ALS_XY_CHAIN") return this.alsXYChain(finder)[0] ?? null;
+    if (type === "DEATH_BLOSSOM") return this.deathBlossom(finder)[0] ?? null;
     return null;
   }
 
@@ -111,6 +111,7 @@ export class AlsSolver {
     if (type === "ALS_XZ") return this.alsXZ(finder, false);
     if (type === "ALS_XY_WING") return this.alsXYWing(finder, false);
     if (type === "ALS_XY_CHAIN") return this.alsXYChain(finder);
+    if (type === "DEATH_BLOSSOM") return this.deathBlossom(finder);
     return [];
   }
 
@@ -289,6 +290,126 @@ export class AlsSolver {
       inChain[i] = true;
       firstRC = null;
       recurse(i, null);
+    }
+    return out;
+  }
+
+  private deathBlossom(finder: CandidateFinder): SolutionStep[] {
+    const alses = enumerateAlses(finder);
+    const sudoku = finder.board;
+    const candidates = finder.getCandidates();
+    // For each cell: which ALS can the cell "see" via each candidate.
+    const rcdb: ({ candMask: number; als: number[][] } | null)[] = new Array(81).fill(null);
+    for (let i = 0; i < alses.length; i++) {
+      const act = alses[i]!;
+      for (let j = 1; j <= 9; j++) {
+        if ((act.candidates & MASKS[j]!) === 0) continue;
+        for (const index of act.buddiesPerCandidat[j]!) {
+          let r = rcdb[index];
+          if (!r) {
+            r = { candMask: 0, als: Array.from({ length: 10 }, () => [] as number[]) };
+            rcdb[index] = r;
+          }
+          r.als[j]!.push(i);
+          r.candMask |= MASKS[j]!;
+        }
+      }
+    }
+
+    const out: SolutionStep[] = [];
+    const deletes = new Map<string, number>();
+    const alsCountAt: number[] = [];
+    const aktDBIndices = new CellSet();
+    let aktDBCandidates = MAX_MASK;
+    const aktDBAls = new Array<number>(10).fill(-1);
+    const incDBCand = new Array<number>(10).fill(0);
+    let stemCell = 0;
+    let maxDBCand = 0;
+    let aktRcdb: { candMask: number; als: number[][] };
+
+    const leaf = (): void => {
+      const step = new SolutionStep("DEATH_BLOSSOM");
+      let found = false;
+      for (const checkCand of candidatesOf(aktDBCandidates)) {
+        if (aktDBAls[checkCand] !== -1) continue;
+        let acc: CellSet | null = null;
+        for (let k = 1; k <= 9; k++) {
+          if (aktDBAls[k] === -1) continue;
+          const ip = alses[aktDBAls[k]!]!.indicesPerCandidat[checkCand];
+          if (!ip) continue;
+          if (acc === null) acc = ip.clone();
+          else acc.or(ip);
+        }
+        if (!acc) continue;
+        const bud = getCommonBuddies(acc);
+        bud.andNot(aktDBIndices);
+        bud.remove(stemCell);
+        bud.and(candidates[checkCand]!);
+        if (!bud.isEmpty()) {
+          found = true;
+          for (const idx of bud) step.addCandidateToDelete(idx, checkCand);
+        }
+      }
+      if (!found) return;
+      step.addIndex(stemCell);
+      let alsCount = 0;
+      for (let k = 1; k <= 9; k++) {
+        if (aktDBAls[k] === -1) continue;
+        const a = alses[aktDBAls[k]!]!;
+        for (const idx of a.indicesPerCandidat[k]!) step.addFin(idx, k);
+        step.addFin(stemCell, k);
+        step.addAls(a.indices.toArray(), candidatesOf(a.candidates).slice());
+        alsCount++;
+      }
+      const key = step.candidatesToDelete
+        .map((c) => `${c.value}@${c.index}`)
+        .sort()
+        .join(",");
+      const old = deletes.get(key);
+      if (old === undefined) {
+        deletes.set(key, out.length);
+        alsCountAt[out.length] = alsCount;
+        out.push(step);
+      } else if (alsCountAt[old]! > alsCount) {
+        out[old] = step;
+        alsCountAt[old] = alsCount;
+      }
+    };
+
+    const recurse = (cand: number): void => {
+      if (cand > maxDBCand) return;
+      if (aktRcdb.als[cand]!.length > 0) {
+        for (const alsIdx of aktRcdb.als[cand]!) {
+          const als = alses[alsIdx]!;
+          // overlap allowed (all-steps default)
+          if ((aktDBCandidates & als.candidates) === 0) continue;
+          aktDBAls[cand] = alsIdx;
+          incDBCand[cand] = aktDBCandidates & ~als.candidates;
+          aktDBCandidates &= als.candidates;
+          aktDBIndices.or(als.indices);
+          if (cand < maxDBCand) recurse(cand + 1);
+          else leaf();
+          aktDBCandidates |= incDBCand[cand]!;
+          aktDBIndices.andNot(als.indices);
+        }
+      } else {
+        aktDBAls[cand] = -1;
+        recurse(cand + 1);
+      }
+    };
+
+    for (let i = 0; i < 81; i++) {
+      if (sudoku.values[i] !== 0) continue;
+      const r = rcdb[i];
+      if (!r || sudoku.cells[i] !== r.candMask) continue;
+      stemCell = i;
+      aktRcdb = r;
+      maxDBCand = 0;
+      for (let j = 1; j <= 9; j++) if (r.als[j]!.length > 0) maxDBCand = j;
+      aktDBIndices.clear();
+      aktDBCandidates = MAX_MASK;
+      aktDBAls.fill(-1);
+      recurse(1);
     }
     return out;
   }

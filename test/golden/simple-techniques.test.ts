@@ -43,6 +43,7 @@ const IMPLEMENTED = new Set([
   "1201", // Template Set
   "1202", // Template Delete
   "0901", // ALS-XZ
+  "0904", // Death Blossom
   // "0902" ALS-XY-Wing: best-effort (no false eliminations). Overlap-allowed RCs
   // fixed most cases; 4/14 reglib instances still find a different valid wing.
   // Excluded from strict golden; TODO.
