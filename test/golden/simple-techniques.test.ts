@@ -17,6 +17,8 @@ const IMPLEMENTED = new Set([
   "0212", // Hidden Quadruple
   "0100", // Locked Candidates Type 1
   "0101", // Locked Candidates Type 2
+  "0110", // Locked Pair
+  "0111", // Locked Triple
   "0800", // XY-Wing
   "0801", // XYZ-Wing
   "0803", // W-Wing
