@@ -62,6 +62,13 @@ export const BUDDIES: readonly CellSet[] = (() => {
 /** CellSet for each of the 27 constraints. */
 export const UNIT_TEMPLATES: readonly CellSet[] = ALL_UNITS.map((u) => CellSet.fromIndices(u));
 
+/** Common buddies: cells that see EVERY cell in `indices` (intersection of buddies). */
+export function getCommonBuddies(indices: CellSet): CellSet {
+  const s = new CellSet(true);
+  for (const i of indices) s.and(BUDDIES[i]!);
+  return s;
+}
+
 function buildLines(): number[][] {
   const out: number[][] = [];
   for (let r = 0; r < 9; r++) {

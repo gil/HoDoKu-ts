@@ -12,6 +12,7 @@ import type { SolutionType } from "../core/solution-type.js";
 import { BUDDIES, LENGTH } from "../core/tables.js";
 import { applyStep } from "./apply-step.js";
 import { validSolution } from "./brute-force.js";
+import { AlsSolver } from "./als.js";
 import { ChainsSolver } from "./chains.js";
 import { ColoringSolver } from "./coloring.js";
 import { FishSolver } from "./fish.js";
@@ -83,6 +84,7 @@ export class StepFinder {
   private readonly uniqueness = new UniquenessSolver();
   private readonly chains = new ChainsSolver();
   private readonly misc = new MiscSolver();
+  private readonly als = new AlsSolver();
 
   private candidates: CellSet[] = Array.from({ length: 10 }, () => new CellSet());
   private candDirty = true;
@@ -144,6 +146,7 @@ export class StepFinder {
     if (UNIQUENESS_TYPES.has(type)) return this.uniqueness.getStep(this, type);
     if (CHAIN_TYPES.has(type)) return this.chains.getStep(this, type);
     if (type === "SUE_DE_COQ") return this.misc.getStep(this, type);
+    if (type === "ALS_XZ") return this.als.getStep(this, type);
     if (type === "BRUTE_FORCE") return this.getBruteForce();
     if (type === "GIVE_UP") return getGiveUpStep();
     return null;
@@ -159,6 +162,7 @@ export class StepFinder {
     if (UNIQUENESS_TYPES.has(type)) return this.uniqueness.findAll(this, type);
     if (CHAIN_TYPES.has(type)) return this.chains.findAll(this, type);
     if (type === "SUE_DE_COQ") return this.misc.findAll(this, type);
+    if (type === "ALS_XZ") return this.als.findAll(this, type);
     return [];
   }
 
