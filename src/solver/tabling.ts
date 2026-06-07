@@ -30,6 +30,11 @@ const NICE_LOOP_TYPES = new Set<SolutionType>([
   "GROUPED_AIC",
 ]);
 const FORCING_TYPES = new Set<SolutionType>(["FORCING_CHAIN", "FORCING_CHAIN_CONTRADICTION"]);
+const NET_TYPES = new Set<SolutionType>([
+  "FORCING_NET",
+  "FORCING_NET_CONTRADICTION",
+  "FORCING_NET_VERITY",
+]);
 
 export class TablingSolver {
   // assign[cell*9 + digit-1]: 0 unknown, 1 ON, 2 OFF
@@ -37,15 +42,56 @@ export class TablingSolver {
   private queue: number[] = [];
 
   getStep(finder: CandidateFinder, type: SolutionType): SolutionStep | null {
+    if (NET_TYPES.has(type)) return this.forcingNet(finder, true)[0] ?? null;
     const outType = this.outType(type);
     if (!outType) return null;
     return this.search(finder, outType, true)[0] ?? null;
   }
 
   findAll(finder: CandidateFinder, type: SolutionType): SolutionStep[] {
+    if (NET_TYPES.has(type)) return this.forcingNet(finder, false);
     const outType = this.outType(type);
     if (!outType) return [];
     return this.search(finder, outType, false);
+  }
+
+  /**
+   * Forcing-net verity: if every possible value of a cell forces the same
+   * candidate OFF, that candidate can be eliminated. Values whose assumption is
+   * itself contradictory are skipped (the cell cannot take them).
+   */
+  private forcingNet(finder: CandidateFinder, onlyOne: boolean): SolutionStep[] {
+    const board = finder.board;
+    const out: SolutionStep[] = [];
+    for (let cell = 0; cell < LENGTH; cell++) {
+      if (board.values[cell] !== 0) continue;
+      const cands = candidatesOf(board.cells[cell]!);
+      if (cands.length < 2) continue;
+      let common: Set<number> | null = null;
+      for (const d of cands) {
+        const off = this.propagate(board, cell, d);
+        if (off === null) continue; // contradictory value -> cell can't be d
+        const set = new Set(off);
+        if (common === null) common = set;
+        else for (const k of common) if (!set.has(k)) common.delete(k);
+        if (common.size === 0) break;
+      }
+      if (!common || common.size === 0) continue;
+      const step = new SolutionStep("FORCING_NET_VERITY");
+      for (const k of common) {
+        const c2 = (k / 9) | 0;
+        const d2 = (k % 9) + 1;
+        if (c2 !== cell && board.values[c2] === 0 && board.isCandidate(c2, d2)) {
+          step.addCandidateToDelete(c2, d2);
+        }
+      }
+      if (step.candidatesToDelete.length > 0) {
+        step.addIndex(cell);
+        out.push(step);
+        if (onlyOne) return out;
+      }
+    }
+    return out;
   }
 
   private outType(type: SolutionType): SolutionType | null {
@@ -60,7 +106,7 @@ export class TablingSolver {
     for (let cell = 0; cell < LENGTH; cell++) {
       if (board.values[cell] !== 0) continue;
       for (const d of candidatesOf(board.cells[cell]!)) {
-        if (this.contradicts(board, cell, d)) {
+        if (this.propagate(board, cell, d) === null) {
           const step = new SolutionStep(outType);
           step.addValue(d);
           step.addIndex(cell);
@@ -73,40 +119,43 @@ export class TablingSolver {
     return out;
   }
 
-  /** True if assuming (cell,digit) ON forces a contradiction. */
-  private contradicts(board: CandidateFinder["board"], cell: number, digit: number): boolean {
+  /**
+   * Propagates the assumption (cell,digit) = ON. Returns the list of forced-OFF
+   * candidate keys (cell*9 + digit-1), or null if the assumption is contradictory.
+   */
+  private propagate(
+    board: CandidateFinder["board"],
+    cell: number,
+    digit: number,
+  ): number[] | null {
     this.assign.fill(0);
     this.queue.length = 0;
-    if (!this.setOn(cell, digit)) return true;
+    if (!this.setOn(cell, digit)) return null;
     while (this.queue.length > 0) {
       const packed = this.queue.pop()!;
       const c = (packed / 16) | 0;
       const d = packed & 15;
       const state = this.assign[c * 9 + d - 1];
       if (state === 1) {
-        // ON: other candidates in cell off, same digit in buddies off
         for (const d2 of candidatesOf(board.cells[c]!)) {
-          if (d2 !== d && !this.setOff(c, d2)) return true;
+          if (d2 !== d && !this.setOff(c, d2)) return null;
         }
         for (const b of BUDDIES[c]!) {
           if (board.values[b] === 0 && board.isCandidate(b, d) && !this.setOff(b, d)) {
-            return true;
+            return null;
           }
         }
       } else {
-        // OFF: cell or house with single placement turns ON
-        if (this.checkCell(board, c)) {
-          // contradiction (no placement) or queued a new ON
-        } else {
-          return true;
-        }
+        if (!this.checkCell(board, c)) return null;
         const con = CONSTRAINTS[c]!;
         for (let k = 0; k < 3; k++) {
-          if (!this.checkHouse(board, con[k]!, d)) return true;
+          if (!this.checkHouse(board, con[k]!, d)) return null;
         }
       }
     }
-    return false;
+    const off: number[] = [];
+    for (let k = 0; k < this.assign.length; k++) if (this.assign[k] === 2) off.push(k);
+    return off;
   }
 
   private checkCell(board: CandidateFinder["board"], c: number): boolean {
