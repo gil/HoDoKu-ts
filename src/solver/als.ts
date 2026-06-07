@@ -45,29 +45,78 @@ export class Als {
   }
 }
 
-export interface RestrictedCommon {
-  als1: number;
-  als2: number;
-  cand1: number;
-  cand2: number;
+/** A Restricted Common between two ALS, with the adjacency check used by ALS chains. */
+export class RestrictedCommon {
+  /** 0 none, 1 cand1 only, 2 cand2 only, 3 both — set during chain propagation. */
+  actualRC = 0;
+  constructor(
+    public als1: number,
+    public als2: number,
+    public cand1: number,
+    public cand2 = 0,
+  ) {}
+
+  checkRC(rc: RestrictedCommon | null, firstTry: boolean): boolean {
+    this.actualRC = this.cand2 === 0 ? 1 : 3;
+    if (rc === null) {
+      if (this.cand2 !== 0) this.actualRC = firstTry ? 1 : 2;
+      return this.actualRC !== 0;
+    }
+    switch (rc.actualRC) {
+      case 1:
+        this.actualRC = checkRCInt(rc.cand1, 0, this.cand1, this.cand2);
+        break;
+      case 2:
+        this.actualRC = checkRCInt(rc.cand2, 0, this.cand1, this.cand2);
+        break;
+      case 3:
+        this.actualRC = checkRCInt(rc.cand1, rc.cand1, this.cand1, this.cand2);
+        break;
+      default:
+        break;
+    }
+    return this.actualRC !== 0;
+  }
+
+  clone(): RestrictedCommon {
+    const r = new RestrictedCommon(this.als1, this.als2, this.cand1, this.cand2);
+    r.actualRC = this.actualRC;
+    return r;
+  }
+}
+
+function checkRCInt(c11: number, c12: number, c21: number, c22: number): number {
+  if (c12 === 0) {
+    if (c22 === 0) return c11 === c21 ? 0 : 1;
+    if (c11 === c22) return 1;
+    if (c11 === c21) return 2;
+    return 3;
+  }
+  if (c22 === 0) return c11 === c21 || c12 === c21 ? 0 : 1;
+  if ((c11 === c21 && c12 === c22) || (c11 === c22 && c12 === c21)) return 0;
+  if (c11 === c22 || c12 === c22) return 1;
+  if (c11 === c21 || c12 === c21) return 2;
+  return 3;
 }
 
 export class AlsSolver {
   getStep(finder: CandidateFinder, type: SolutionType): SolutionStep | null {
     if (type === "ALS_XZ") return this.alsXZ(finder, true)[0] ?? null;
     if (type === "ALS_XY_WING") return this.alsXYWing(finder, true)[0] ?? null;
+    if (type === "ALS_XY_CHAIN") return this.alsXYChain(finder)[0] ?? null;
     return null;
   }
 
   findAll(finder: CandidateFinder, type: SolutionType): SolutionStep[] {
     if (type === "ALS_XZ") return this.alsXZ(finder, false);
     if (type === "ALS_XY_WING") return this.alsXYWing(finder, false);
+    if (type === "ALS_XY_CHAIN") return this.alsXYChain(finder);
     return [];
   }
 
   private alsXZ(finder: CandidateFinder, onlyOne: boolean): SolutionStep[] {
     const alses = enumerateAlses(finder);
-    const rcs = computeRestrictedCommons(alses);
+    const { rcs } = computeRestrictedCommons(alses);
     const out: SolutionStep[] = [];
     for (const rc of rcs) {
       const als1 = alses[rc.als1]!;
@@ -94,7 +143,7 @@ export class AlsSolver {
 
   private alsXYWing(finder: CandidateFinder, onlyOne: boolean): SolutionStep[] {
     const alses = enumerateAlses(finder);
-    const rcs = computeRestrictedCommons(alses);
+    const { rcs } = computeRestrictedCommons(alses);
     const out: SolutionStep[] = [];
     for (let i = 0; i < rcs.length; i++) {
       const rc1 = rcs[i]!;
@@ -150,6 +199,96 @@ export class AlsSolver {
           if (onlyOne) return out;
         }
       }
+    }
+    return out;
+  }
+
+  private alsXYChain(finder: CandidateFinder): SolutionStep[] {
+    const alses = enumerateAlses(finder);
+    const { rcs, starts, ends } = computeRestrictedCommons(alses, true, true);
+    const out: SolutionStep[] = [];
+    const deletes = new Map<string, number>(); // elim key -> step index
+    const alsCountAt: number[] = [];
+    const MAX_RC = 50;
+    const chainArr: RestrictedCommon[] = [];
+    const inChain = new Array<boolean>(alses.length).fill(false);
+    let firstRC: RestrictedCommon | null = null;
+    let startAls: Als = alses[0]!;
+
+    const recurse = (alsIndex: number, lastRC: RestrictedCommon | null): void => {
+      if (chainArr.length >= MAX_RC) return;
+      let firstTry = true;
+      for (let idx = starts[alsIndex]!; idx < ends[alsIndex]!; idx++) {
+        const rc = rcs[idx]!;
+        if (chainArr.length >= MAX_RC || !rc.checkRC(lastRC, firstTry)) continue;
+        if (inChain[rc.als2]) continue;
+        const aktAls = alses[rc.als2]!;
+        if (chainArr.length === 0) firstRC = rc;
+        chainArr.push(rc);
+        inChain[rc.als2] = true;
+
+        if (chainArr.length >= 3) {
+          let c1 = firstRC!.cand1;
+          let c2 = firstRC!.cand2;
+          if (firstRC!.actualRC === 1) c2 = 0;
+          else if (firstRC!.actualRC === 2) c1 = 0;
+          let c3 = 0;
+          let c4 = 0;
+          if (rc.actualRC === 1) c3 = rc.cand1;
+          else if (rc.actualRC === 2) c3 = rc.cand2;
+          else if (rc.actualRC === 3) {
+            c3 = rc.cand1;
+            c4 = rc.cand2;
+          }
+          const restrMask =
+            (c1 ? MASKS[c1]! : 0) | (c2 ? MASKS[c2]! : 0) | (c3 ? MASKS[c3]! : 0) | (c4 ? MASKS[c4]! : 0);
+          const step = new SolutionStep("ALS_XY_CHAIN");
+          checkCandidatesToDelete(step, startAls, aktAls, restrMask);
+          if (step.candidatesToDelete.length > 0) {
+            step.addAls(startAls.indices.toArray(), candidatesOf(startAls.candidates).slice());
+            for (const link of chainArr) {
+              const a = alses[link.als2]!;
+              step.addAls(a.indices.toArray(), candidatesOf(a.candidates).slice());
+            }
+            const alsCount = chainArr.length + 1;
+            const key = step.candidatesToDelete
+              .map((c) => `${c.value}@${c.index}`)
+              .sort()
+              .join(",");
+            const old = deletes.get(key);
+            if (old === undefined) {
+              deletes.set(key, out.length);
+              alsCountAt[out.length] = alsCount;
+              out.push(step);
+            } else if (alsCountAt[old]! > alsCount) {
+              out[old] = step;
+              alsCountAt[old] = alsCount;
+            }
+          }
+        }
+
+        recurse(rc.als2, rc);
+        inChain[rc.als2] = false;
+        chainArr.pop();
+
+        if (lastRC === null) {
+          if (rc.cand2 !== 0 && firstTry) {
+            firstTry = false;
+            idx--;
+          } else {
+            firstTry = true;
+          }
+        }
+      }
+    };
+
+    for (let i = 0; i < alses.length; i++) {
+      startAls = alses[i]!;
+      chainArr.length = 0;
+      inChain.fill(false);
+      inChain[i] = true;
+      firstRC = null;
+      recurse(i, null);
     }
     return out;
   }
@@ -241,12 +380,27 @@ export function enumerateAlses(finder: CandidateFinder): Als[] {
  * (matching HoDoKu's all-steps RC generation); an RC instance may not lie in the
  * overlap. Each pair yields 0-2 RC candidates.
  */
-export function computeRestrictedCommons(alses: Als[], withOverlap = true): RestrictedCommon[] {
+export interface RcResult {
+  rcs: RestrictedCommon[];
+  /** starts[i]/ends[i] = range in `rcs` of RCs whose first ALS is i (forward search). */
+  starts: number[];
+  ends: number[];
+}
+
+export function computeRestrictedCommons(
+  alses: Als[],
+  withOverlap = true,
+  onlyForward = true,
+): RcResult {
   const rcs: RestrictedCommon[] = [];
+  const starts = new Array<number>(alses.length).fill(0);
+  const ends = new Array<number>(alses.length).fill(0);
   const inter = new CellSet();
   for (let i = 0; i < alses.length; i++) {
     const als1 = alses[i]!;
-    for (let j = i + 1; j < alses.length; j++) {
+    starts[i] = rcs.length;
+    for (let j = onlyForward ? i + 1 : 0; j < alses.length; j++) {
+      if (i === j) continue;
       const als2 = alses[j]!;
       inter.set(als1.indices);
       inter.and(als2.indices);
@@ -262,7 +416,7 @@ export function computeRestrictedCommons(alses: Als[], withOverlap = true): Rest
         budSet.and(als2.buddiesAlsPerCandidat[cand]!);
         if (idxSet.andEquals(budSet)) {
           if (rc === null) {
-            rc = { als1: i, als2: j, cand1: cand, cand2: 0 };
+            rc = new RestrictedCommon(i, j, cand);
             rcs.push(rc);
           } else {
             rc.cand2 = cand;
@@ -270,6 +424,7 @@ export function computeRestrictedCommons(alses: Als[], withOverlap = true): Rest
         }
       }
     }
+    ends[i] = rcs.length;
   }
-  return rcs;
+  return { rcs, starts, ends };
 }
