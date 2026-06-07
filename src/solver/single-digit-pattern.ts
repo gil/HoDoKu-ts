@@ -296,7 +296,11 @@ export class SingleDigitPatternSolver {
         if (tmp.size() >= 2) notEnough = false;
         tmp.andNot(LINE_TPL[erLine]!);
         if (tmp.isEmpty()) continue;
-        if (notEnough && !ALLOW_ERS_WITH_ONLY_TWO) continue;
+        // 2-candidate ERs degenerate into X-Chains; HoDoKu omits them from the
+        // default solve path (rating fidelity) but the regression library lists
+        // them (variant 0402-1), so include them in the all-steps catalog.
+        const allowTwo = ALLOW_ERS_WITH_ONLY_TWO || this.collector !== null;
+        if (notEnough && !allowTwo) continue;
 
         let step = this.checkEmptyRectangle(
           finder, cand, i, blockCands, LINES[erLine]!, LINE_TPL, COL_TPL, erCol, false,

@@ -24,7 +24,9 @@ const IMPLEMENTED = new Set([
   "0803", // W-Wing
   "0400", // Skyscraper
   "0401", // 2-String Kite
+  "0402", // Empty Rectangle
   "0404", // Dual 2-String Kite
+  "0405", // Dual Empty Rectangle
   // Fish: basic / finned / sashimi / franken / finned-franken / mutant / finned-mutant
   "0300", "0301", "0302", "0303", "0304", "0305",
   "0310", "0311", "0312", "0313", "0314", "0315",
@@ -62,9 +64,6 @@ const IMPLEMENTED = new Set([
   "0607", // Avoidable Rectangle Type 1
   "0608", // Avoidable Rectangle Type 2
   "0610", // BUG+1
-  // "0402" Empty Rectangle: registered + correct on the cases it finds, but the
-  // ported single-ER algorithm misses ~6/36 reglib instances (a deeper ER
-  // variant). Excluded from strict golden until the ER search is completed.
 ]);
 
 const entries = loadReglib().filter((e) => !e.isFail && IMPLEMENTED.has(e.base));
