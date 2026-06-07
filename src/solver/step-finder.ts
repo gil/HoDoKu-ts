@@ -6,6 +6,7 @@
 
 import type { Board } from "../core/board.js";
 import { candidatesOf } from "../core/candidates.js";
+import { isFish } from "../config/defaults.js";
 import { CellSet } from "../core/cell-set.js";
 import { SolutionStep } from "../core/solution-step.js";
 import type { SolutionType } from "../core/solution-type.js";
@@ -46,7 +47,6 @@ const WING_TYPES = new Set<SolutionType>(["XY_WING", "XYZ_WING", "W_WING"]);
 
 const SDP_TYPES = new Set<SolutionType>(["SKYSCRAPER", "TWO_STRING_KITE", "EMPTY_RECTANGLE"]);
 
-const BASIC_FISH_TYPES = new Set<SolutionType>(["X_WING", "SWORDFISH", "JELLYFISH"]);
 
 const COLORING_TYPES = new Set<SolutionType>([
   "SIMPLE_COLORS",
@@ -161,7 +161,7 @@ export class StepFinder {
     if (SIMPLE_TYPES.has(type)) return this.simple.getStep(this.board, type);
     if (WING_TYPES.has(type)) return this.wing.getStep(this, type);
     if (SDP_TYPES.has(type)) return this.sdp.getStep(this, type);
-    if (BASIC_FISH_TYPES.has(type)) return this.fish.getStep(this, type);
+    if (isFish(type)) return this.fish.getStep(this, type);
     if (COLORING_TYPES.has(type)) return this.coloring.getStep(this, type);
     if (UNIQUENESS_TYPES.has(type)) return this.uniqueness.getStep(this, type);
     if (CHAIN_TYPES.has(type)) return this.chains.getStep(this, type);
@@ -179,7 +179,7 @@ export class StepFinder {
     if (SIMPLE_TYPES.has(type)) return this.simple.findAll(this.board, type);
     if (WING_TYPES.has(type)) return this.wing.findAll(this, type);
     if (SDP_TYPES.has(type)) return this.sdp.findAll(this, type);
-    if (BASIC_FISH_TYPES.has(type)) return this.fish.findAll(this, type);
+    if (isFish(type)) return this.fish.findAll(this, type);
     if (COLORING_TYPES.has(type)) return this.coloring.findAll(this, type);
     if (UNIQUENESS_TYPES.has(type)) return this.uniqueness.findAll(this, type);
     if (CHAIN_TYPES.has(type)) return this.chains.findAll(this, type);
