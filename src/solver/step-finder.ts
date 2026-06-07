@@ -20,6 +20,7 @@ import { getGiveUpStep } from "./give-up.js";
 import { MiscSolver } from "./misc.js";
 import { SimpleSolver } from "./simple.js";
 import { SingleDigitPatternSolver } from "./single-digit-pattern.js";
+import { TemplateSolver } from "./template.js";
 import { UniquenessSolver } from "./uniqueness.js";
 import { WingSolver } from "./wing.js";
 
@@ -85,6 +86,7 @@ export class StepFinder {
   private readonly chains = new ChainsSolver();
   private readonly misc = new MiscSolver();
   private readonly als = new AlsSolver();
+  private readonly template = new TemplateSolver();
 
   private candidates: CellSet[] = Array.from({ length: 10 }, () => new CellSet());
   private candDirty = true;
@@ -147,6 +149,7 @@ export class StepFinder {
     if (CHAIN_TYPES.has(type)) return this.chains.getStep(this, type);
     if (type === "SUE_DE_COQ") return this.misc.getStep(this, type);
     if (type === "ALS_XZ" || type === "ALS_XY_WING") return this.als.getStep(this, type);
+    if (type === "TEMPLATE_SET" || type === "TEMPLATE_DEL") return this.template.getStep(this, type);
     if (type === "BRUTE_FORCE") return this.getBruteForce();
     if (type === "GIVE_UP") return getGiveUpStep();
     return null;
@@ -163,6 +166,7 @@ export class StepFinder {
     if (CHAIN_TYPES.has(type)) return this.chains.findAll(this, type);
     if (type === "SUE_DE_COQ") return this.misc.findAll(this, type);
     if (type === "ALS_XZ" || type === "ALS_XY_WING") return this.als.findAll(this, type);
+    if (type === "TEMPLATE_SET" || type === "TEMPLATE_DEL") return this.template.findAll(this, type);
     return [];
   }
 

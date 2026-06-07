@@ -30,6 +30,8 @@ const IMPLEMENTED = new Set([
   "0702", // XY-Chain
   "0703", // Remote Pair
   "1101", // Sue de Coq
+  "1201", // Template Set
+  "1202", // Template Delete
   "0901", // ALS-XZ
   // "0902" ALS-XY-Wing: best-effort (no false eliminations). Overlap-allowed RCs
   // fixed most cases; 4/14 reglib instances still find a different valid wing.
