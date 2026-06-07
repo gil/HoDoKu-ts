@@ -14,7 +14,7 @@ import { CellSet } from "../core/cell-set.js";
 import { SolutionStep } from "../core/solution-step.js";
 import type { SolutionType } from "../core/solution-type.js";
 import { getFishSize, isSashimiFish } from "../core/solution-type.js";
-import { isFrankenFish, isMutantFish } from "../config/defaults.js";
+import { categoryOf, isFrankenFish, isMutantFish } from "../config/defaults.js";
 import { BLOCK, COL, LINE, UNIT_TEMPLATES, getCommonBuddies } from "../core/tables.js";
 import type { CandidateFinder } from "./wing.js";
 
@@ -90,15 +90,15 @@ export class FishSolver {
   }
 
   getStep(finder: CandidateFinder, type: SolutionType): SolutionStep | null {
-    const all = this.run(finder, type);
+    const all = this.run(finder, type, false);
     return all[0] ?? null;
   }
 
   findAll(finder: CandidateFinder, type: SolutionType): SolutionStep[] {
-    return this.run(finder, type);
+    return this.run(finder, type, true);
   }
 
-  private run(finder: CandidateFinder, type: SolutionType): SolutionStep[] {
+  private run(finder: CandidateFinder, type: SolutionType, siamese: boolean): SolutionStep[] {
     const size = getFishSize(type);
     const withFins = type.startsWith("FINNED_") || type.startsWith("SASHIMI_");
     const fishType = isMutantFish(type) ? MUTANT : isFrankenFish(type) ? FRANKEN : BASIC;
@@ -110,6 +110,11 @@ export class FishSolver {
       withEndoFins: fishType !== BASIC,
       fishType,
     };
+    // Finned and Sashimi basic fish share a category, so a Siamese pair can mix
+    // them. In siamese mode for a basic fish, also collect the sister sub-type so
+    // the pairing pool spans the whole FINNED_BASIC_FISH category.
+    const sashimiVals =
+      siamese && fishType === BASIC && withFins ? [false, true] : [params.sashimi];
     this.out = [];
     for (let cand = 1; cand <= 9; cand++) {
       this.candidate = cand;
@@ -117,15 +122,57 @@ export class FishSolver {
       this.fishType = params.fishType;
       this.withoutFins = params.withoutFins;
       this.withFins = params.withFins;
-      this.sashimi = params.sashimi;
       this.withEndoFins = params.withEndoFins;
       this.minSize = size;
       this.maxSize = size;
-      this.searchFishes(true);
-      if (this.fishType !== MUTANT) this.searchFishes(false);
+      for (const sh of sashimiVals) {
+        this.sashimi = sh;
+        this.searchFishes(true);
+        if (this.fishType !== MUTANT) this.searchFishes(false);
+      }
     }
     // keep only steps of the requested type
-    return this.out.filter((s) => s.type === type);
+    const fishes = this.out.filter((s) => s.type === type);
+    if (siamese) this.appendSiameseFish(fishes, this.out);
+    return fishes;
+  }
+
+  /**
+   * Two fish of the same type, candidate and base set but with different
+   * eliminations form a Siamese Fish (reglib 5-digit codes, e.g. 03111). The
+   * combined step carries both cover sets, fins and eliminations. Only produced
+   * in the all-steps catalog (HoDoKu's isAllowDualsAndSiamese), never in solve.
+   */
+  private appendSiameseFish(fishes: SolutionStep[], pool: SolutionStep[]): void {
+    const maxIndex = pool.length;
+    for (let i = 0; i < maxIndex - 1; i++) {
+      for (let j = i + 1; j < maxIndex; j++) {
+        const s1 = pool[i]!;
+        const s2 = pool[j]!;
+        if (s1.values[0] !== s2.values[0]) continue;
+        if (s1.baseEntities.length !== s2.baseEntities.length) continue;
+        if (categoryOf(s1.type) !== categoryOf(s2.type)) continue;
+        let baseEqual = true;
+        for (let k = 0; k < s1.baseEntities.length; k++) {
+          const a = s1.baseEntities[k]!;
+          const b = s2.baseEntities[k]!;
+          if (a.name !== b.name || a.number !== b.number) {
+            baseEqual = false;
+            break;
+          }
+        }
+        if (!baseEqual) continue;
+        const d1 = s1.candidatesToDelete[0]!;
+        const d2 = s2.candidatesToDelete[0]!;
+        if (d1.index === d2.index && d1.value === d2.value) continue;
+        const sia = s1.clone();
+        sia.isSiamese = true;
+        for (const e of s2.coverEntities) sia.addCoverEntity(e.name, e.number);
+        for (const f of s2.fins) sia.addFin(f.index, f.value);
+        for (const c of s2.candidatesToDelete) sia.addCandidateToDelete(c.index, c.value);
+        fishes.push(sia);
+      }
+    }
   }
 
   private searchFishes(lines: boolean): void {
