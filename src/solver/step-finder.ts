@@ -64,6 +64,19 @@ const CHAIN_TYPES = new Set<SolutionType>([
   "REMOTE_PAIR",
 ]);
 
+const TABLING_TYPES = new Set<SolutionType>([
+  "NICE_LOOP",
+  "CONTINUOUS_NICE_LOOP",
+  "DISCONTINUOUS_NICE_LOOP",
+  "AIC",
+  "GROUPED_NICE_LOOP",
+  "GROUPED_CONTINUOUS_NICE_LOOP",
+  "GROUPED_DISCONTINUOUS_NICE_LOOP",
+  "GROUPED_AIC",
+  "FORCING_CHAIN",
+  "FORCING_CHAIN_CONTRADICTION",
+]);
+
 const UNIQUENESS_TYPES = new Set<SolutionType>([
   "UNIQUENESS_1",
   "UNIQUENESS_2",
@@ -152,8 +165,7 @@ export class StepFinder {
     if (type === "SUE_DE_COQ") return this.misc.getStep(this, type);
     if (type === "ALS_XZ" || type === "ALS_XY_WING") return this.als.getStep(this, type);
     if (type === "TEMPLATE_SET" || type === "TEMPLATE_DEL") return this.template.getStep(this, type);
-    if (type === "FORCING_CHAIN" || type === "FORCING_CHAIN_CONTRADICTION")
-      return this.tabling.getStep(this, type);
+    if (TABLING_TYPES.has(type)) return this.tabling.getStep(this, type);
     if (type === "BRUTE_FORCE") return this.getBruteForce();
     if (type === "GIVE_UP") return getGiveUpStep();
     return null;
@@ -171,8 +183,7 @@ export class StepFinder {
     if (type === "SUE_DE_COQ") return this.misc.findAll(this, type);
     if (type === "ALS_XZ" || type === "ALS_XY_WING") return this.als.findAll(this, type);
     if (type === "TEMPLATE_SET" || type === "TEMPLATE_DEL") return this.template.findAll(this, type);
-    if (type === "FORCING_CHAIN" || type === "FORCING_CHAIN_CONTRADICTION")
-      return this.tabling.findAll(this, type);
+    if (TABLING_TYPES.has(type)) return this.tabling.findAll(this, type);
     return [];
   }
 
