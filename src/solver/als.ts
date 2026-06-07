@@ -54,14 +54,15 @@ export interface RestrictedCommon {
 
 export class AlsSolver {
   getStep(finder: CandidateFinder, type: SolutionType): SolutionStep | null {
-    if (type !== "ALS_XZ") return null;
-    const all = this.alsXZ(finder, true);
-    return all[0] ?? null;
+    if (type === "ALS_XZ") return this.alsXZ(finder, true)[0] ?? null;
+    if (type === "ALS_XY_WING") return this.alsXYWing(finder, true)[0] ?? null;
+    return null;
   }
 
   findAll(finder: CandidateFinder, type: SolutionType): SolutionStep[] {
-    if (type !== "ALS_XZ") return [];
-    return this.alsXZ(finder, false);
+    if (type === "ALS_XZ") return this.alsXZ(finder, false);
+    if (type === "ALS_XY_WING") return this.alsXYWing(finder, false);
+    return [];
   }
 
   private alsXZ(finder: CandidateFinder, onlyOne: boolean): SolutionStep[] {
@@ -72,9 +73,9 @@ export class AlsSolver {
       const als1 = alses[rc.als1]!;
       const als2 = alses[rc.als2]!;
       const step = new SolutionStep("ALS_XZ");
-      checkCandidatesToDelete(step, als1, als2, rc.cand1);
+      checkCandidatesToDelete(step, als1, als2, MASKS[rc.cand1]!);
       if (rc.cand2 !== 0) {
-        checkCandidatesToDelete(step, als1, als2, rc.cand2);
+        checkCandidatesToDelete(step, als1, als2, MASKS[rc.cand2]!);
         const d1 = checkDoublyLinkedAls(step, als1, als2, rc.cand1, rc.cand2);
         const d2 = checkDoublyLinkedAls(step, als2, als1, rc.cand1, rc.cand2);
         if (d1 || d2) step.fins.length = 0;
@@ -90,11 +91,72 @@ export class AlsSolver {
     }
     return out;
   }
+
+  private alsXYWing(finder: CandidateFinder, onlyOne: boolean): SolutionStep[] {
+    const alses = enumerateAlses(finder);
+    const rcs = computeRestrictedCommons(alses);
+    const out: SolutionStep[] = [];
+    for (let i = 0; i < rcs.length; i++) {
+      const rc1 = rcs[i]!;
+      for (let j = i + 1; j < rcs.length; j++) {
+        const rc2 = rcs[j]!;
+        if (rc1.cand2 === 0 && rc2.cand2 === 0 && rc1.cand1 === rc2.cand1) continue;
+        // the two RCs must connect three distinct ALS sharing one (= c)
+        let cI = -1;
+        let aI = -1;
+        let bI = -1;
+        if (rc1.als1 === rc2.als1 && rc1.als2 !== rc2.als2) {
+          cI = rc1.als1;
+          aI = rc1.als2;
+          bI = rc2.als2;
+        } else if (rc1.als2 === rc2.als1 && rc1.als1 !== rc2.als2) {
+          cI = rc1.als2;
+          aI = rc1.als1;
+          bI = rc2.als2;
+        } else if (rc1.als1 === rc2.als2 && rc1.als2 !== rc2.als1) {
+          cI = rc1.als1;
+          aI = rc1.als2;
+          bI = rc2.als1;
+        } else if (rc1.als2 === rc2.als2 && rc1.als1 !== rc2.als1) {
+          cI = rc1.als2;
+          aI = rc1.als1;
+          bI = rc2.als1;
+        } else continue;
+
+        const a = alses[aI]!;
+        const b = alses[bI]!;
+        const c = alses[cI]!;
+        if (!a.indices.andEmpty(b.indices)) continue; // no overlap (overlap disabled)
+        const union = a.indices.clone();
+        union.or(b.indices);
+        if (union.equals(a.indices) || union.equals(b.indices)) continue;
+
+        const step = new SolutionStep("ALS_XY_WING");
+        const restrMask =
+          MASKS[rc1.cand1]! |
+          (rc1.cand2 ? MASKS[rc1.cand2]! : 0) |
+          MASKS[rc2.cand1]! |
+          (rc2.cand2 ? MASKS[rc2.cand2]! : 0);
+        checkCandidatesToDelete(step, a, b, restrMask);
+        if (step.candidatesToDelete.length > 0) {
+          step.addAls(a.indices.toArray(), candidatesOf(a.candidates).slice());
+          step.addAls(b.indices.toArray(), candidatesOf(b.candidates).slice());
+          step.addAls(c.indices.toArray(), candidatesOf(c.candidates).slice());
+          addRestrictedCommon(step, a, c, rc1.cand1);
+          if (rc1.cand2 !== 0) addRestrictedCommon(step, a, c, rc1.cand2);
+          addRestrictedCommon(step, b, c, rc2.cand1);
+          if (rc2.cand2 !== 0) addRestrictedCommon(step, b, c, rc2.cand2);
+          out.push(step);
+          if (onlyOne) return out;
+        }
+      }
+    }
+    return out;
+  }
 }
 
-function checkCandidatesToDelete(step: SolutionStep, als1: Als, als2: Als, restr: number): void {
-  let prc = als1.candidates & als2.candidates;
-  if (restr > 0) prc &= ~MASKS[restr]!;
+function checkCandidatesToDelete(step: SolutionStep, als1: Als, als2: Als, restrMask: number): void {
+  const prc = als1.candidates & als2.candidates & ~restrMask;
   if (prc === 0) return;
   if (als1.buddies.andEmpty(als2.buddies)) return;
   for (const cand of candidatesOf(prc)) {

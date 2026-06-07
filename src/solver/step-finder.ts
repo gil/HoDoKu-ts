@@ -146,7 +146,7 @@ export class StepFinder {
     if (UNIQUENESS_TYPES.has(type)) return this.uniqueness.getStep(this, type);
     if (CHAIN_TYPES.has(type)) return this.chains.getStep(this, type);
     if (type === "SUE_DE_COQ") return this.misc.getStep(this, type);
-    if (type === "ALS_XZ") return this.als.getStep(this, type);
+    if (type === "ALS_XZ" || type === "ALS_XY_WING") return this.als.getStep(this, type);
     if (type === "BRUTE_FORCE") return this.getBruteForce();
     if (type === "GIVE_UP") return getGiveUpStep();
     return null;
@@ -162,7 +162,7 @@ export class StepFinder {
     if (UNIQUENESS_TYPES.has(type)) return this.uniqueness.findAll(this, type);
     if (CHAIN_TYPES.has(type)) return this.chains.findAll(this, type);
     if (type === "SUE_DE_COQ") return this.misc.findAll(this, type);
-    if (type === "ALS_XZ") return this.als.findAll(this, type);
+    if (type === "ALS_XZ" || type === "ALS_XY_WING") return this.als.findAll(this, type);
     return [];
   }
 

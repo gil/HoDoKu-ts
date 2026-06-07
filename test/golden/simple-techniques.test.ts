@@ -31,6 +31,9 @@ const IMPLEMENTED = new Set([
   "0703", // Remote Pair
   "1101", // Sue de Coq
   "0901", // ALS-XZ
+  // "0902" ALS-XY-Wing: registered + valid (no false eliminations), but 5/14
+  // reglib instances surface a different valid wing than the recorded one
+  // (3-ALS matching coverage gap). Excluded from strict golden; TODO.
   "0500", // Simple Colors Trap
   "0501", // Simple Colors Wrap
   "0502", // Multi Colors 1
