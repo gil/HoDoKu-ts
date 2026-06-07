@@ -10,7 +10,7 @@
  * Grouped variants (group/ALS nodes) and forcing nets are handled elsewhere.
  */
 
-import { ANZ_VALUES } from "../core/candidates.js";
+import { ANZ_VALUES, candidatesOf } from "../core/candidates.js";
 import { CellSet } from "../core/cell-set.js";
 import {
   ALS_NODE,
@@ -131,6 +131,7 @@ export class TablingChainsSolver {
   private minLen: number[] = [];
   private actMin = 0;
   private retIdx = [0, 0, 0, 0, 0];
+  private stepLen: number[] = [];
 
   constructor() {
     for (let i = 0; i < LENGTH * 10; i++) {
@@ -165,6 +166,7 @@ export class TablingChainsSolver {
     this.netMode = false;
     this.steps = [];
     this.deletesMap.clear();
+    this.stepLen = [];
     for (let i = 0; i < this.onTable.length; i++) {
       this.onTable[i]!.reset();
       this.offTable[i]!.reset();
@@ -191,6 +193,7 @@ export class TablingChainsSolver {
     this.netMode = false;
     this.steps = [];
     this.deletesMap.clear();
+    this.stepLen = [];
     for (let i = 0; i < this.onTable.length; i++) {
       this.onTable[i]!.reset();
       this.offTable[i]!.reset();
@@ -215,6 +218,7 @@ export class TablingChainsSolver {
     this.netMode = true;
     this.steps = [];
     this.deletesMap.clear();
+    this.stepLen = [];
     for (let i = 0; i < this.onTable.length; i++) {
       this.onTable[i]!.reset();
       this.offTable[i]!.reset();
@@ -331,6 +335,7 @@ export class TablingChainsSolver {
     this.netMode = false;
     this.steps = [];
     this.deletesMap.clear();
+    this.stepLen = [];
     for (let i = 0; i < this.onTable.length; i++) {
       this.onTable[i]!.reset();
       this.offTable[i]!.reset();
@@ -588,6 +593,34 @@ export class TablingChainsSolver {
     }
   }
 
+  /**
+   * Adds every ALS referenced by the step's chains to step.alses and rewrites
+   * the chain ALS-node indices to the step-local index (HoDoKu adjustChains).
+   * Needed so the chain can be rendered ("ALS:r1c2 {39}").
+   */
+  adjustChains(step: SolutionStep): void {
+    const chainAlses = new Map<number, number>();
+    let alsIndex = step.alses.length;
+    for (const ch of step.chains) {
+      for (let j = ch.start; j <= ch.end; j++) {
+        const node = ch.nodes[j]!;
+        if (node === -2147483648) continue;
+        const abs = node < 0 ? -node : node;
+        if (getSNodeType(abs) !== ALS_NODE) continue;
+        const which = getSAlsIndex(abs);
+        let newIndex = chainAlses.get(which);
+        if (newIndex === undefined) {
+          const als = this.alses[which]!;
+          step.addAls(als.indices.toArray(), candidatesOf(als.candidates).slice());
+          newIndex = alsIndex++;
+          chainAlses.set(which, newIndex);
+        }
+        const re = makeAlsEntry(getSCellIndex(abs), newIndex, getSCandidate(abs), isSStrong(abs), ALS_NODE);
+        ch.nodes[j] = node < 0 ? -re : re;
+      }
+    }
+  }
+
   private replaceOrCopyStep(): void {
     const step = this.globalStep;
     if (step.chains.length === 0) return;
@@ -608,6 +641,8 @@ export class TablingChainsSolver {
     }
     // In a net search keep only nets; in a chain search keep only chains.
     if (this.netMode && !net) return;
+    // length must be computed before adjustChains (chain still has solver-global ALS indices)
+    const len = this.chainsLength(step.chains);
     // HoDoKu dedups by getCandidateString(false), which embeds the step name,
     // so contradiction and verity for the same outcome are kept separately.
     const key =
@@ -615,15 +650,18 @@ export class TablingChainsSolver {
       (step.candidatesToDelete.length > 0
         ? "|d:" + step.candidatesToDelete.map((c) => `${c.value}@${c.index}`).sort().join(",")
         : "|s:" + step.indices.map((idx, k) => `${step.values[k]}@${idx}`).sort().join(","));
-    const len = step.chains.reduce((a, c) => a + (c.end - c.start + 1), 0);
     const old = this.deletesMap.get(key);
     if (old !== undefined) {
-      const oldStep = this.steps[old]!;
-      const oldLen = oldStep.chains.reduce((a, c) => a + (c.end - c.start + 1), 0);
-      if (oldLen > len) this.steps[old] = step.clone();
+      if (this.stepLen[old]! > len) {
+        this.adjustChains(step);
+        this.steps[old] = step.clone();
+        this.stepLen[old] = len;
+      }
       return;
     }
+    this.adjustChains(step);
     this.deletesMap.set(key, this.steps.length);
+    this.stepLen[this.steps.length] = len;
     this.steps.push(step.clone());
   }
 
@@ -1109,13 +1147,27 @@ export class TablingChainsSolver {
     this.finishStep(this.globalStep.chains[0]!);
   }
 
-  private finishStep(chain: Chain): void {
+  private finishStep(_chain: Chain): void {
     const del = this.candKey();
-    const len = chain.end - chain.start;
+    const len = this.chainsLength(this.globalStep.chains);
     const old = this.deletesMap.get(del);
-    if (old !== undefined && this.steps[old]!.chains[0]!.end - this.steps[old]!.chains[0]!.start <= len) return;
-    this.deletesMap.set(del, this.steps.length);
-    this.steps.push(this.globalStep.clone());
+    if (old !== undefined && this.stepLen[old]! <= len) return;
+    this.adjustChains(this.globalStep);
+    const cloned = this.globalStep.clone();
+    if (old !== undefined) {
+      this.steps[old] = cloned;
+      this.stepLen[old] = len;
+    } else {
+      this.deletesMap.set(del, this.steps.length);
+      this.stepLen[this.steps.length] = len;
+      this.steps.push(cloned);
+    }
+  }
+
+  private chainsLength(chains: Chain[]): number {
+    let len = 0;
+    for (const ch of chains) len += ch.end - ch.start + 1;
+    return len;
   }
 
   private candKey(): string {

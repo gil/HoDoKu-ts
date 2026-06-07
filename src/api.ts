@@ -92,22 +92,10 @@ function cellRef(index: number, value: number): CellRef {
   return { index, row: (index / 9) | 0, col: index % 9, value };
 }
 
-function cellName(index: number): string {
-  return `r${((index / 9) | 0) + 1}c${(index % 9) + 1}`;
-}
 
 function explain(step: SolutionStep): string {
-  const name = typeName(step.type);
-  if (step.indices.length > 0 && step.values.length > 0 && step.candidatesToDelete.length === 0) {
-    return `${name}: ${cellName(step.indices[0]!)}=${step.values[0]}`;
-  }
-  if (step.candidatesToDelete.length > 0) {
-    const elims = step.candidatesToDelete
-      .map((c) => `${cellName(c.index)}<>${c.value}`)
-      .join(", ");
-    return `${name}: ${elims}`;
-  }
-  return name;
+  // Faithful HoDoKu SolutionStep.toString(2) human-readable description.
+  return step.toString(2);
 }
 
 function toHint(step: SolutionStep): Hint {
