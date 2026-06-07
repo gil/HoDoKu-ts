@@ -34,6 +34,9 @@ const IMPLEMENTED = new Set([
   "0701", // X-Chain
   "0702", // XY-Chain
   "0703", // Remote Pair
+  "0706", // Continuous Nice Loop
+  "0707", // Discontinuous Nice Loop
+  "0708", // AIC
   "1101", // Sue de Coq
   "1201", // Template Set
   "1202", // Template Delete

@@ -21,6 +21,7 @@ import { getGiveUpStep } from "./give-up.js";
 import { MiscSolver } from "./misc.js";
 import { SimpleSolver } from "./simple.js";
 import { SingleDigitPatternSolver } from "./single-digit-pattern.js";
+import { TablingChainsSolver } from "./tabling-chains.js";
 import { TablingSolver } from "./tabling.js";
 import { TemplateSolver } from "./template.js";
 import { UniquenessSolver } from "./uniqueness.js";
@@ -64,11 +65,16 @@ const CHAIN_TYPES = new Set<SolutionType>([
   "REMOTE_PAIR",
 ]);
 
-const TABLING_TYPES = new Set<SolutionType>([
+// Plain Nice-Loops / AIC use the faithful Trebor-tables engine (byte-exact).
+const NICE_LOOP_EXACT = new Set<SolutionType>([
   "NICE_LOOP",
   "CONTINUOUS_NICE_LOOP",
   "DISCONTINUOUS_NICE_LOOP",
   "AIC",
+]);
+
+// Grouped variants + forcing use the sound medusa engine (best-effort).
+const TABLING_TYPES = new Set<SolutionType>([
   "GROUPED_NICE_LOOP",
   "GROUPED_CONTINUOUS_NICE_LOOP",
   "GROUPED_DISCONTINUOUS_NICE_LOOP",
@@ -105,6 +111,7 @@ export class StepFinder {
   private readonly als = new AlsSolver();
   private readonly template = new TemplateSolver();
   private readonly tabling = new TablingSolver();
+  private readonly tablingChains = new TablingChainsSolver();
 
   private candidates: CellSet[] = Array.from({ length: 10 }, () => new CellSet());
   private candDirty = true;
@@ -168,6 +175,7 @@ export class StepFinder {
     if (type === "SUE_DE_COQ") return this.misc.getStep(this, type);
     if (type === "ALS_XZ" || type === "ALS_XY_WING") return this.als.getStep(this, type);
     if (type === "TEMPLATE_SET" || type === "TEMPLATE_DEL") return this.template.getStep(this, type);
+    if (NICE_LOOP_EXACT.has(type)) return this.tablingChains.getStep(this, type);
     if (TABLING_TYPES.has(type)) return this.tabling.getStep(this, type);
     if (type === "BRUTE_FORCE") return this.getBruteForce();
     if (type === "GIVE_UP") return getGiveUpStep();
@@ -186,6 +194,7 @@ export class StepFinder {
     if (type === "SUE_DE_COQ") return this.misc.findAll(this, type);
     if (type === "ALS_XZ" || type === "ALS_XY_WING") return this.als.findAll(this, type);
     if (type === "TEMPLATE_SET" || type === "TEMPLATE_DEL") return this.template.findAll(this, type);
+    if (NICE_LOOP_EXACT.has(type)) return this.tablingChains.findAll(this);
     if (TABLING_TYPES.has(type)) return this.tabling.findAll(this, type);
     return [];
   }
