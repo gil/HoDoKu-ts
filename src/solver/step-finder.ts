@@ -22,7 +22,6 @@ import { MiscSolver } from "./misc.js";
 import { SimpleSolver } from "./simple.js";
 import { SingleDigitPatternSolver } from "./single-digit-pattern.js";
 import { TablingChainsSolver } from "./tabling-chains.js";
-import { TablingSolver } from "./tabling.js";
 import { TemplateSolver } from "./template.js";
 import { UniquenessSolver } from "./uniqueness.js";
 import { WingSolver } from "./wing.js";
@@ -94,8 +93,8 @@ const FORCING_CHAIN_EXACT = new Set<SolutionType>([
   "FORCING_CHAIN_VERITY",
 ]);
 
-// Forcing NETS still use the sound medusa engine (faithful net tables TODO).
-const TABLING_TYPES = new Set<SolutionType>([
+// Forcing NETS use the faithful Trebor-tables engine (net premise tables).
+const FORCING_NET_EXACT = new Set<SolutionType>([
   "FORCING_NET",
   "FORCING_NET_CONTRADICTION",
   "FORCING_NET_VERITY",
@@ -125,7 +124,6 @@ export class StepFinder {
   private readonly misc = new MiscSolver();
   private readonly als = new AlsSolver();
   private readonly template = new TemplateSolver();
-  private readonly tabling = new TablingSolver();
   private readonly tablingChains = new TablingChainsSolver();
 
   private candidates: CellSet[] = Array.from({ length: 10 }, () => new CellSet());
@@ -210,7 +208,10 @@ export class StepFinder {
       const all = this.tablingChains.getForcingChains(this);
       return all.find((s) => s.type === type) ?? all[0] ?? null;
     }
-    if (TABLING_TYPES.has(type)) return this.tabling.getStep(this, type);
+    if (FORCING_NET_EXACT.has(type)) {
+      const all = this.tablingChains.getForcingNets(this);
+      return all.find((s) => s.type === type) ?? all[0] ?? null;
+    }
     if (type === "BRUTE_FORCE") return this.getBruteForce();
     if (type === "GIVE_UP") return getGiveUpStep();
     return null;
@@ -236,7 +237,9 @@ export class StepFinder {
     if (FORCING_CHAIN_EXACT.has(type)) {
       return this.tablingChains.getForcingChains(this).filter((s) => s.type === type);
     }
-    if (TABLING_TYPES.has(type)) return this.tabling.findAll(this, type);
+    if (FORCING_NET_EXACT.has(type)) {
+      return this.tablingChains.getForcingNets(this).filter((s) => s.type === type);
+    }
     return [];
   }
 

@@ -29,6 +29,8 @@ import {
   NORMAL_NODE,
 } from "../core/chain.js";
 import { Als, enumerateAlses } from "./als.js";
+import type { Board } from "../core/board.js";
+import { SimpleSolver } from "./simple.js";
 import { SolutionStep } from "../core/solution-step.js";
 import type { SolutionType } from "../core/solution-type.js";
 import { TableEntry } from "../core/table-entry.js";
@@ -42,6 +44,9 @@ import {
   UNIT_TEMPLATES,
 } from "../core/tables.js";
 import type { CandidateFinder } from "./wing.js";
+
+/** Sentinel separating net branches in a rendered chain (Java Integer.MIN_VALUE). */
+const MIN_MARKER = -2147483648;
 
 const LINE_TPL = UNIT_TEMPLATES.slice(0, 9);
 const COL_TPL = UNIT_TEMPLATES.slice(9, 18);
@@ -117,6 +122,15 @@ export class TablingChainsSolver {
   private alses: Als[] = [];
   private tmpOnSets: CellSet[] = Array.from({ length: 10 }, () => new CellSet());
   private tmpOffSets: CellSet[] = Array.from({ length: 10 }, () => new CellSet());
+  // Forcing-net state
+  private netMode = false;
+  private work!: Board;
+  private saved!: Board;
+  private simple = new SimpleSolver();
+  private mins: Int32Array[] = [];
+  private minLen: number[] = [];
+  private actMin = 0;
+  private retIdx = [0, 0, 0, 0, 0];
 
   constructor() {
     for (let i = 0; i < LENGTH * 10; i++) {
@@ -148,6 +162,7 @@ export class TablingChainsSolver {
     this.withGroupNodes = withGroupNodes;
     this.withAlsNodes = withAlsNodes;
     this.onlyGroupedNiceLoops = onlyGrouped;
+    this.netMode = false;
     this.steps = [];
     this.deletesMap.clear();
     for (let i = 0; i < this.onTable.length; i++) {
@@ -173,6 +188,7 @@ export class TablingChainsSolver {
     this.withGroupNodes = true;
     this.withAlsNodes = true;
     this.onlyGroupedNiceLoops = false;
+    this.netMode = false;
     this.steps = [];
     this.deletesMap.clear();
     for (let i = 0; i < this.onTable.length; i++) {
@@ -190,12 +206,129 @@ export class TablingChainsSolver {
     return this.steps;
   }
 
+  /** Faithful Trebor-tables Forcing Nets (net premise tables + net chains). */
+  getForcingNets(finder: CandidateFinder): SolutionStep[] {
+    this.finder = finder;
+    this.withGroupNodes = true;
+    this.withAlsNodes = true;
+    this.onlyGroupedNiceLoops = false;
+    this.netMode = true;
+    this.steps = [];
+    this.deletesMap.clear();
+    for (let i = 0; i < this.onTable.length; i++) {
+      this.onTable[i]!.reset();
+      this.offTable[i]!.reset();
+    }
+    this.extendedTableMap.clear();
+    this.extendedTableIndex = 0;
+    this.fillTablesNet();
+    this.fillTablesWithGroupNodes();
+    this.fillTablesWithAls();
+    this.expandTables(this.onTable);
+    this.expandTables(this.offTable);
+    this.checkForcingChains();
+    this.netMode = false;
+    return this.steps;
+  }
+
+  /** Net table fill: simulate set/delete + propagate singles, recording net premises. */
+  private fillTablesNet(): void {
+    this.saved = this.finder.board.clone();
+    for (let i = 0; i < LENGTH; i++) {
+      if (this.saved.values[i] !== 0) continue;
+      for (const cand of this.saved.getAllCandidates(i)) {
+        this.work = this.saved.clone();
+        this.getTableEntry(this.onTable[i * 10 + cand]!, i, cand, true);
+        this.work = this.saved.clone();
+        this.getTableEntry(this.offTable[i * 10 + cand]!, i, cand, false);
+      }
+    }
+  }
+
+  private getTableEntry(entry: TableEntry, cellIndex: number, cand: number, set: boolean): void {
+    if (set) {
+      this.setCellNet(cellIndex, cand, entry, false, false);
+    } else {
+      this.work.delCandidate(cellIndex, cand);
+      entry.addWithRet(cellIndex, cand, false, 0);
+      if (this.work.getAnzCandidates(cellIndex) === 1) {
+        this.setCellNet(cellIndex, this.work.getAllCandidates(cellIndex)[0]!, entry, false, true);
+      }
+    }
+    for (let pass = 0; pass < 4; pass++) {
+      const singles = [
+        ...this.simple.findAll(this.work, "NAKED_SINGLE"),
+        ...this.simple.findAll(this.work, "HIDDEN_SINGLE"),
+      ];
+      for (const s of singles) {
+        this.setCellNet(s.indices[0]!, s.values[0]!, entry, true, s.type === "NAKED_SINGLE");
+      }
+    }
+  }
+
+  private setCellNet(
+    cellIndex: number,
+    cand: number,
+    entry: TableEntry,
+    getRet: boolean,
+    nakedSingle: boolean,
+  ): void {
+    const orig = this.finder.getCandidates();
+    const tmp = orig[cand]!.clone();
+    tmp.remove(cellIndex);
+    tmp.and(BUDDIES[cellIndex]!);
+    const cands = this.work.getAllCandidates(cellIndex).slice();
+    // smallest house by current free count (for hidden-single ret indices)
+    const con = CONSTRAINTS[cellIndex]!;
+    let entityTpl = LINE_TPL[getLine(cellIndex)]!;
+    let entityFree = this.work.free[con[0]!]![cand]!;
+    let d = this.work.free[con[1]!]![cand]!;
+    if (d < entityFree) {
+      entityTpl = COL_TPL[getCol(cellIndex)]!;
+      entityFree = d;
+    }
+    d = this.work.free[con[2]!]![cand]!;
+    if (d < entityFree) {
+      entityTpl = BLOCK_TPL[getBlock(cellIndex)]!;
+      entityFree = d;
+    }
+    this.work.setCell(cellIndex, cand);
+    const retIndex = entry.index;
+    if (getRet) {
+      this.retIdx = [0, 0, 0, 0, 0];
+      if (nakedSingle) {
+        let ri = 0;
+        for (const c of this.saved.getAllCandidates(cellIndex)) {
+          if (c === cand || ri >= 5) continue;
+          this.retIdx[ri++] = entry.getEntryIndexFor(cellIndex, false, c);
+        }
+      } else {
+        const t = orig[cand]!.clone();
+        t.remove(cellIndex);
+        t.and(entityTpl);
+        let ri = 0;
+        for (const idx of t.toArray()) {
+          if (ri >= 5) break;
+          this.retIdx[ri++] = entry.getEntryIndexFor(idx, false, cand);
+        }
+      }
+      entry.addNet(cellIndex, cand, true, this.retIdx[0]!, this.retIdx[1]!, this.retIdx[2]!, this.retIdx[3]!, this.retIdx[4]!);
+    } else {
+      entry.addSimple(cellIndex, cand, true);
+    }
+    for (const idx of tmp.toArray()) entry.addWithRet(idx, cand, false, retIndex);
+    for (const c of cands) {
+      if (c !== cand) entry.addWithRet(cellIndex, c, false, retIndex);
+    }
+  }
+
   /** Fills + expands the tables for a Kraken Fish search (chainsOnly). */
   initForKrakenSearch(finder: CandidateFinder, withAls: boolean): void {
     this.finder = finder;
     this.withGroupNodes = true;
     this.withAlsNodes = withAls;
     this.onlyGroupedNiceLoops = false;
+    this.netMode = false;
     this.steps = [];
     this.deletesMap.clear();
     for (let i = 0; i < this.onTable.length; i++) {
@@ -458,6 +591,23 @@ export class TablingChainsSolver {
   private replaceOrCopyStep(): void {
     const step = this.globalStep;
     if (step.chains.length === 0) return;
+    // Net detection: a chain node stored as a negative value marks a net branch.
+    let net = false;
+    for (const c of step.chains) {
+      for (let i = c.start; i <= c.end; i++) {
+        if (c.nodes[i]! < 0) {
+          net = true;
+          break;
+        }
+      }
+      if (net) break;
+    }
+    if (net) {
+      if (step.type === "FORCING_CHAIN_CONTRADICTION") step.type = "FORCING_NET_CONTRADICTION";
+      else if (step.type === "FORCING_CHAIN_VERITY") step.type = "FORCING_NET_VERITY";
+    }
+    // In a net search keep only nets; in a chain search keep only chains.
+    if (this.netMode && !net) return;
     // HoDoKu dedups by getCandidateString(false), which embeds the step name,
     // so contradiction and verity for the same outcome are kept separately.
     const key =
@@ -1014,6 +1164,13 @@ export class TablingChainsSolver {
       lastCellIndex = newCellIndex;
       lastCellEntry = oldEntry;
       this.tmpChain[j++] = oldEntry;
+      // weave in net branches whose connection point is this entry
+      for (let k = 0; k < this.actMin; k++) {
+        if (this.minLen[k]! > 0 && this.mins[k]![this.minLen[k]! - 1] === oldEntry) {
+          for (let l = this.minLen[k]! - 2; l >= 0; l--) this.tmpChain[j++] = -this.mins[k]![l]!;
+          this.tmpChain[j++] = MIN_MARKER;
+        }
+      }
     }
     if (j > 0) {
       this.globalStep.addChain(new Chain(0, j - 1, Array.from(this.tmpChain.slice(0, j))));
@@ -1025,6 +1182,7 @@ export class TablingChainsSolver {
   private buildChain(entry: TableEntry, cellIndex: number, cand: number, set: boolean): void {
     this.chainIndex = 0;
     this.chainSet.clear();
+    this.actMin = 0;
     const chainEntry = makeSimpleEntry(cellIndex, cand, set);
     let index = -1;
     for (let i = 0; i < entry.index; i++) {
@@ -1034,14 +1192,37 @@ export class TablingChainsSolver {
       }
     }
     if (index === -1) return;
-    // single-reverse-index traversal (chainsOnly => no nets)
+    this.chainIndex = this.traceChain(entry, index, this.chain, false);
+    // net parts: reconstruct each collected multiple-inference branch
+    let m = 0;
+    while (m < this.actMin) {
+      const startVal = this.mins[m]![0]!;
+      const si = entry.getEntryIndex(startVal);
+      if (si === 0 && startVal !== entry.entries[0]) {
+        this.minLen[m] = 0;
+      } else {
+        this.minLen[m] = this.traceChain(entry, si, this.mins[m]!, true);
+      }
+      m++;
+    }
+  }
+
+  /**
+   * Traces one chain from `startIndex` back to the premise, writing entries into
+   * `out` (reversed order) and returning its length. For the main chain
+   * (isMin=false) all cells are recorded in chainSet and, in net mode, the extra
+   * reverse indices spawn net branches (mins). For a branch (isMin=true) the
+   * trace stops as soon as it reaches the main chain.
+   */
+  private traceChain(entry: TableEntry, startIndex: number, out: Int32Array, isMin: boolean): number {
+    let idx = 0;
     let cur = entry;
     const org = entry;
-    let first = index;
+    let first = startIndex;
     let expanded = false;
-    this.chain[this.chainIndex++] = cur.entries[first]!;
-    this.addToChainSet(cur.entries[first]!);
-    while (first !== 0 && this.chainIndex < this.chain.length) {
+    out[idx++] = cur.entries[first]!;
+    if (!isMin) this.addToChainSet(cur.entries[first]!);
+    while (first !== 0 && idx < out.length) {
       if (cur.isExpanded(first)) {
         const ti = org.getRetIndex(first, 0);
         if (org.isExtendedTable(first)) cur = this.extendedTable[ti]!;
@@ -1050,10 +1231,28 @@ export class TablingChainsSolver {
         expanded = true;
         first = cur.getEntryIndex(org.entries[first]!);
       }
-      const ri0 = cur.getRetIndex(first, 0);
+      const tmpFirst = first;
+      const ri0 = cur.getRetIndex(tmpFirst, 0);
       first = ri0;
-      this.chain[this.chainIndex++] = cur.entries[ri0]!;
-      this.addToChainSet(cur.entries[ri0]!);
+      out[idx++] = cur.entries[ri0]!;
+      if (!isMin) {
+        this.addToChainSet(cur.entries[ri0]!);
+      } else if (this.chainSet.contains(cur.getCellIndex(ri0))) {
+        for (let j = 0; j < this.chainIndex; j++) {
+          if (this.chain[j] === cur.entries[ri0]) return idx;
+        }
+      }
+      if (this.netMode && !isMin) {
+        for (let i = 1; i < 5; i++) {
+          const ei = cur.getRetIndex(tmpFirst, i);
+          if (ei !== 0) {
+            if (this.mins[this.actMin] === undefined) this.mins[this.actMin] = new Int32Array(2000);
+            this.mins[this.actMin]![0] = cur.entries[ei]!;
+            this.minLen[this.actMin] = 1;
+            this.actMin++;
+          }
+        }
+      }
       if (expanded && first === 0) {
         const retEntry = cur.entries[0]!;
         cur = org;
@@ -1061,6 +1260,7 @@ export class TablingChainsSolver {
         expanded = false;
       }
     }
+    return idx;
   }
 
   private addToChainSet(entry: number): void {
