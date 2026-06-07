@@ -12,25 +12,25 @@ Provides:
 
 Zero runtime dependencies. Ships ESM + CJS + type declarations.
 
-> Port status: complete. Every solving technique is validated against HoDoKu's
-> own regression library (`reglib-1.3`) and, for the techniques with no reglib
-> cases, byte-for-byte against the compiled original Java engine:
->
-> - **Singles, subsets, intersections, wings, single-digit patterns** (Skyscraper,
->   2-String Kite + dual, Empty Rectangle + dual, Turbot), **coloring**, the full
->   **uniqueness** family (UR 1-6, Hidden/Avoidable Rectangle, BUG+1).
-> - **All Fish** — basic / finned / sashimi / franken / mutant, sizes 2-7, plus
->   **Siamese Fish** and **Kraken Fish** (Type 1 & 2).
-> - **Chains** — X/XY-Chain, Remote Pair, Nice Loops + AIC, **grouped** Nice
->   Loops/AIC (group + ALS nodes), and **Forcing Chains & Nets** (contradiction +
->   verity) via a faithful port of Trebor's Tables.
-> - **ALS** — ALS-XZ, ALS-XY-Wing, ALS-XY-Chain, Death Blossom; **Sue de Coq**;
->   **Templates** (Set + Delete).
->
-> Generation by difficulty and rating match HoDoKu's defaults exactly across all
-> five levels. A global soundness harness proves no technique ever makes an
-> invalid elimination. Parity is locked in by golden tests against `reglib` plus
-> `*-java-reference.tsv` fixtures captured from the original jar.
+Every solving technique is validated against HoDoKu's
+own regression library (`reglib-1.3`) and, for the techniques with no reglib
+cases, byte-for-byte against the compiled original Java engine, 2226 tests in total:
+
+- **Singles, subsets, intersections, wings, single-digit patterns** (Skyscraper,
+  2-String Kite + dual, Empty Rectangle + dual, Turbot), **coloring**, the full
+  **uniqueness** family (UR 1-6, Hidden/Avoidable Rectangle, BUG+1).
+- **All Fish** — basic / finned / sashimi / franken / mutant, sizes 2-7, plus
+  **Siamese Fish** and **Kraken Fish** (Type 1 & 2).
+- **Chains** — X/XY-Chain, Remote Pair, Nice Loops + AIC, **grouped** Nice
+  Loops/AIC (group + ALS nodes), and **Forcing Chains & Nets** (contradiction +
+  verity) via a faithful port of Trebor's Tables.
+- **ALS** — ALS-XZ, ALS-XY-Wing, ALS-XY-Chain, Death Blossom; **Sue de Coq**;
+  **Templates** (Set + Delete).
+
+Generation by difficulty and rating match HoDoKu's defaults exactly across all
+five levels. A global soundness harness proves no technique ever makes an
+invalid elimination. Parity is locked in by golden tests against `reglib` plus
+`*-java-reference.tsv` fixtures captured from the original jar.
 
 ## Install
 
@@ -65,7 +65,7 @@ listTechniques();
 // [{ technique, name, category, difficulty, baseScore, enabled }, ...]
 
 // Rate / count solutions
-rate(puzzle.givens);          // { score, difficulty, solved }
+rate(puzzle.givens); // { score, difficulty, solved }
 countSolutions(puzzle.givens); // 0 (invalid) | 1 (unique) | 2 (multiple)
 ```
 
