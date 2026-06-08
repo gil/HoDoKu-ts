@@ -142,7 +142,11 @@ export class TablingChainsSolver {
 
   getStep(finder: CandidateFinder, type: SolutionType): SolutionStep | null {
     const grouped = isGrouped(type);
-    const all = this.getNiceLoops(finder, grouped, grouped, grouped);
+    // ALS nodes in tabling chains are gated behind HoDoKu's
+    // allowAlsInTablingChains option, off by default during normal solving and
+    // only enabled in all-steps mode (findAll). Enabling them here both diverges
+    // from HoDoKu and is far slower.
+    const all = this.getNiceLoops(finder, grouped, false, grouped);
     return all.find((s) => stepClass(s.type) === stepClass(type)) ?? all[0] ?? null;
   }
 
@@ -184,11 +188,15 @@ export class TablingChainsSolver {
     return this.steps;
   }
 
-  /** Faithful Trebor-tables Forcing Chains (chainsOnly; contradiction + verity). */
-  getForcingChains(finder: CandidateFinder): SolutionStep[] {
+  /**
+   * Faithful Trebor-tables Forcing Chains (chainsOnly; contradiction + verity).
+   * ALS nodes are gated behind HoDoKu's allowAlsInTablingChains option, off
+   * during normal solving and only enabled in all-steps mode (findAll).
+   */
+  getForcingChains(finder: CandidateFinder, allowAls = true): SolutionStep[] {
     this.finder = finder;
     this.withGroupNodes = true;
-    this.withAlsNodes = true;
+    this.withAlsNodes = allowAls;
     this.onlyGroupedNiceLoops = false;
     this.netMode = false;
     this.steps = [];
@@ -202,7 +210,7 @@ export class TablingChainsSolver {
     this.extendedTableIndex = 0;
     this.fillTables();
     this.fillTablesWithGroupNodes();
-    this.fillTablesWithAls();
+    if (allowAls) this.fillTablesWithAls();
     this.expandTables(this.onTable);
     this.expandTables(this.offTable);
     this.checkForcingChains();
@@ -210,10 +218,10 @@ export class TablingChainsSolver {
   }
 
   /** Faithful Trebor-tables Forcing Nets (net premise tables + net chains). */
-  getForcingNets(finder: CandidateFinder): SolutionStep[] {
+  getForcingNets(finder: CandidateFinder, allowAls = true): SolutionStep[] {
     this.finder = finder;
     this.withGroupNodes = true;
-    this.withAlsNodes = true;
+    this.withAlsNodes = allowAls;
     this.onlyGroupedNiceLoops = false;
     this.netMode = true;
     this.steps = [];
@@ -227,7 +235,7 @@ export class TablingChainsSolver {
     this.extendedTableIndex = 0;
     this.fillTablesNet();
     this.fillTablesWithGroupNodes();
-    this.fillTablesWithAls();
+    if (allowAls) this.fillTablesWithAls();
     this.expandTables(this.onTable);
     this.expandTables(this.offTable);
     this.checkForcingChains();

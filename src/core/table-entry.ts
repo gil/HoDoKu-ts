@@ -72,13 +72,17 @@ export class TableEntry {
   indices = new Map<number, number>();
 
   reset(): void {
+    // expandTables() scans `entries` and stops at the first 0, so the used
+    // prefix must be zeroed on reuse; otherwise stale nodes from a previous
+    // (longer) build leak in and produce phantom chains. Zeroing [0, index)
+    // keeps the whole array 0 by induction (HoDoKu does Arrays.fill(entries, 0)).
+    this.entries.fill(0, 0, this.index);
     this.index = 0;
     this.indices.clear();
     for (let i = 1; i <= 9; i++) {
       this.onSets[i]!.clear();
       this.offSets[i]!.clear();
     }
-    // entries/rets are overwritten by index; only the live prefix matters
   }
 
   /** Adds a simple node (initial table fill). */

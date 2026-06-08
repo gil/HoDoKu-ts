@@ -205,11 +205,11 @@ export class StepFinder {
     if (NICE_LOOP_EXACT.has(type)) return this.tablingChains.getStep(this, type);
     if (GROUPED_NICE_LOOP_EXACT.has(type)) return this.tablingChains.getStep(this, type);
     if (FORCING_CHAIN_EXACT.has(type)) {
-      const all = this.tablingChains.getForcingChains(this);
+      const all = this.tablingChains.getForcingChains(this, false);
       return all.find((s) => s.type === type) ?? all[0] ?? null;
     }
     if (FORCING_NET_EXACT.has(type)) {
-      const all = this.tablingChains.getForcingNets(this);
+      const all = this.tablingChains.getForcingNets(this, false);
       return all.find((s) => s.type === type) ?? all[0] ?? null;
     }
     if (type === "BRUTE_FORCE") return this.getBruteForce();
