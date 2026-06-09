@@ -32,6 +32,10 @@ five levels. A global soundness harness proves no technique ever makes an
 invalid elimination. Parity is locked in by golden tests against `reglib` plus
 `*-java-reference.tsv` fixtures captured from the original jar.
 
+> [!IMPORTANT]
+> This port is **very experimental**. It is still being tested and improved
+> upon, and its API and behavior may change.
+
 ## Install
 
 ```sh
