@@ -1,16 +1,16 @@
 # hodoku-ts
 
 A TypeScript port of [HoDoKu](https://hodoku.sourceforge.net/), the Sudoku
-generator and human-style solver / hint engine. Headless library — no GUI.
+generator and human-style solver / hint engine. Headless library, usable from any JS runtime.
 
 Provides:
 
 - **Generation** of puzzles by difficulty (with HoDoKu's rating model)
 - **Hints** for the next logical move
-- **Solution path** — the ordered list of human techniques that solve a puzzle
-- **Technique summary** — which techniques a puzzle needs, and the catalog
+- **Solution path**: the ordered list of human techniques that solve a puzzle
+- **Technique summary**: which techniques a puzzle needs, and the catalog
 
-Zero runtime dependencies. Ships ESM + CJS + type declarations.
+Zero runtime dependencies. Includes ESM + CJS + type declarations.
 
 Every solving technique is validated against HoDoKu's
 own regression library (`reglib-1.3`) and, for the techniques with no reglib
@@ -19,12 +19,12 @@ cases, byte-for-byte against the compiled original Java engine, 2226 tests in to
 - **Singles, subsets, intersections, wings, single-digit patterns** (Skyscraper,
   2-String Kite + dual, Empty Rectangle + dual, Turbot), **coloring**, the full
   **uniqueness** family (UR 1-6, Hidden/Avoidable Rectangle, BUG+1).
-- **All Fish** — basic / finned / sashimi / franken / mutant, sizes 2-7, plus
+- **All Fish**: basic / finned / sashimi / franken / mutant, sizes 2-7, plus
   **Siamese Fish** and **Kraken Fish** (Type 1 & 2).
-- **Chains** — X/XY-Chain, Remote Pair, Nice Loops + AIC, **grouped** Nice
+- **Chains** include X/XY-Chain, Remote Pair, Nice Loops + AIC, **grouped** Nice
   Loops/AIC (group + ALS nodes), and **Forcing Chains & Nets** (contradiction +
   verity) via a faithful port of Trebor's Tables.
-- **ALS** — ALS-XZ, ALS-XY-Wing, ALS-XY-Chain, Death Blossom; **Sue de Coq**;
+- **ALS**: ALS-XZ, ALS-XY-Wing, ALS-XY-Chain, Death Blossom; **Sue de Coq**;
   **Templates** (Set + Delete).
 
 Generation by difficulty and rating match HoDoKu's defaults exactly across all
@@ -33,7 +33,7 @@ invalid elimination. Parity is locked in by golden tests against `reglib` plus
 `*-java-reference.tsv` fixtures captured from the original jar.
 
 > [!IMPORTANT]
-> This port is **very experimental**. It is still being tested and improved
+> This port is **experimental**. It is still being tested and improved
 > upon, and its API and behavior may change.
 
 ## Install
@@ -104,4 +104,4 @@ pnpm lint
 
 ## License
 
-GPL-3.0-or-later — derivative of HoDoKu (© 2008–12 Bernhard Hobiger). See `COPYING`.
+GPL-3.0-or-later. Derivative of HoDoKu (© 2008-2012 Bernhard Hobiger). See `COPYING`.
